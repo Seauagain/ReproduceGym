@@ -1,15 +1,67 @@
-"""Step 4: launch a sandbox on the host.
+"""Step 4: launch a sandbox on the host for a rendered task.
 
-Reuses the ClawGym sandbox backend (docker default, chroot/unshare when Docker
-is restricted), copies the task's input_files/ into the agent workspace, and
-injects the reproduction agent's API key from .env. The agent (Claude Code by
-default) runs inside; the host keeps reward/ and secrets outside. Stub only.
+Reads the task's data_entry.json, prepares the agent workspace from input_files/
+(reward/ stays out), and assembles a Runtime bundling the chosen agent backend,
+the host sandbox, the user_query, task metadata, and the MetaX node inventory the
+in-sandbox agent may ssh into. Nothing heavy happens here; runner does the work.
 """
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+from reprogym.config import REPO_ROOT
+from reprogym.metax import MetaxNode, load_nodes
+from reprogym.sandbox.backends import AgentBackend, get_backend
+from reprogym.sandbox.sandbox import LocalSandbox, Sandbox
+from reprogym.sandbox.workspace import prepare_workspace
 
 
-def launch(task_dir: Path) -> object:
-    raise NotImplementedError("scaffold: start sandbox, mount input_files, inject key")
+@dataclass
+class Runtime:
+    task_dir: Path
+    run_dir: Path
+    workspace: Path
+    backend: AgentBackend
+    sandbox: Sandbox
+    user_query: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    metax_nodes: dict[str, MetaxNode] = field(default_factory=dict)
+
+
+def _default_run_dir(task_id: str) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return REPO_ROOT / "runs" / f"{task_id}-{stamp}"
+
+
+def launch(
+    task_dir: str | Path,
+    run_dir: str | Path | None = None,
+    *,
+    backend: str | AgentBackend = "claude-code",
+    sandbox: Sandbox | None = None,
+    metax_nodes: Any = None,
+    clean: bool = False,
+) -> Runtime:
+    task_dir = Path(task_dir)
+    data_entry = json.loads((task_dir / "data_entry.json").read_text(encoding="utf-8"))
+    task_id = data_entry.get("task_id", task_dir.name)
+
+    run_dir = Path(run_dir) if run_dir is not None else _default_run_dir(task_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    workspace = prepare_workspace(task_dir, run_dir / "workspace", clean=clean)
+
+    return Runtime(
+        task_dir=task_dir,
+        run_dir=run_dir,
+        workspace=workspace,
+        backend=get_backend(backend),
+        sandbox=sandbox or LocalSandbox(),
+        user_query=data_entry.get("user_query", ""),
+        metadata=data_entry.get("metadata", {}),
+        metax_nodes=load_nodes(metax_nodes),
+    )

@@ -1,13 +1,87 @@
 """Step 5: run the reproduction agent and record the trajectory.
 
-Issues the task's user_query (from data_entry.json) to the in-sandbox agent. The
-agent works locally and ssh's to verl/MetaX nodes for GPU when needed -- ops are
-plain shell actions captured into the trajectory, not wrapped in submit/poll.
-Noise distillation is offline, later. Stub only.
+Issues the task user_query to the in-sandbox agent. The agent works locally and
+ssh's to verl/MetaX nodes for GPU when needed -- those are plain shell actions
+captured into the trajectory, not wrapped in submit/poll. The MetaX inventory is
+forwarded into the sandbox env (REPROGYM_METAX_NODES) so the agent can resolve
+aliases. Noise distillation over raw cluster logs is offline and out of scope here.
 """
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
 
-def run(runtime: object, user_query: str) -> object:
-    raise NotImplementedError("scaffold: drive agent, capture trajectory")
+from reprogym.metax import nodes_to_env
+from reprogym.sandbox.launcher import Runtime
+from reprogym.trajectory import Trajectory
+
+
+@dataclass
+class RunResult:
+    trajectory: Trajectory
+    trajectory_path: Path
+    session_id: str | None
+    returncode: int
+    workspace: Path
+    stderr: str = ""
+
+
+def _next_trajectory_path(run_dir: Path) -> Path:
+    base = run_dir / "trajectory.jsonl"
+    if not base.exists():
+        return base
+    n = 1
+    while (run_dir / f"trajectory.{n}.jsonl").exists():
+        n += 1
+    return run_dir / f"trajectory.{n}.jsonl"
+
+
+def run(
+    runtime: Runtime,
+    user_query: str | None = None,
+    *,
+    resume_session_id: str | None = None,
+    timeout: float | None = None,
+) -> RunResult:
+    prompt = user_query if user_query is not None else runtime.user_query
+    resume = resume_session_id is not None
+    session_id = resume_session_id or str(uuid.uuid4())
+
+    argv = runtime.backend.build_command(prompt, session_id=session_id, resume=resume)
+    env = runtime.backend.build_env(_os_environ())
+    if runtime.metax_nodes:
+        env["REPROGYM_METAX_NODES"] = nodes_to_env(runtime.metax_nodes)
+
+    result = runtime.sandbox.run(argv, cwd=runtime.workspace, env=env, timeout=timeout)
+
+    traj = runtime.backend.parse(
+        result.stdout,
+        meta={
+            "agent": runtime.backend.name,
+            "task_id": runtime.metadata.get("claim_id") or runtime.metadata.get("paper_id"),
+            "resumed": resume,
+        },
+    )
+    sid = traj.meta.get("session_id") or session_id
+    traj.meta.setdefault("session_id", sid)
+    traj.meta["returncode"] = result.returncode
+
+    path = _next_trajectory_path(runtime.run_dir)
+    traj.dump(path)
+
+    return RunResult(
+        trajectory=traj,
+        trajectory_path=path,
+        session_id=sid,
+        returncode=result.returncode,
+        workspace=runtime.workspace,
+        stderr=result.stderr,
+    )
+
+
+def _os_environ() -> dict[str, str]:
+    import os
+
+    return dict(os.environ)

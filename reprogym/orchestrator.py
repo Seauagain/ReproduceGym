@@ -27,6 +27,16 @@ from reprogym.verify import score
 
 
 @dataclass
+class BuildResult:
+    paper_id: str
+    claim_id: str
+    claim_spec: dict[str, Any]
+    claim_spec_path: Path
+    task_dir: Path
+    validation: list[str]
+
+
+@dataclass
 class ReproduceResult:
     paper_id: str
     claim_id: str
@@ -62,21 +72,16 @@ def _select_claim(claims: list[dict], claim_id: str | None) -> dict:
     raise ReproduceError(f"claim_id {claim_id!r} not found; have {[c.get('claim_id') for c in claims]}")
 
 
-def reproduce(
+def build_task(
     paper: str | Path,
     claim_id: str | None = None,
     *,
     client: Any = None,
-    backend: Any = "claude-code",
-    sandbox: Any = None,
     paper_id: str | None = None,
     work_dir: str | Path | None = None,
-    run_dir: str | Path | None = None,
-    metax_nodes: Any = None,
-    timeout: float | None = None,
     baseline_check: bool = True,
-    do_score: bool = True,
-) -> ReproduceResult:
+) -> BuildResult:
+    """Pipeline only: paper MD -> claims -> spec -> rendered task -> validated."""
     paper_text, derived_id = _read_paper(paper)
     paper_id = paper_id or derived_id
 
@@ -106,21 +111,55 @@ def reproduce(
     if problems:
         raise ReproduceError("task failed validation: " + "; ".join(problems))
 
-    # 6-7. launch host sandbox + run agent + record trajectory
-    runtime = launch(task_dir, run_dir, backend=backend, sandbox=sandbox, metax_nodes=metax_nodes)
-    rr = run(runtime, timeout=timeout)
-
-    # 8. hidden scoring
-    reward = score(task_dir, runtime.workspace) if do_score else None
-
-    return ReproduceResult(
+    return BuildResult(
         paper_id=paper_id,
         claim_id=cid,
         claim_spec=spec,
         claim_spec_path=claims_dir / f"{cid}.yaml",
         task_dir=task_dir,
+        validation=problems,
+    )
+
+
+def reproduce(
+    paper: str | Path,
+    claim_id: str | None = None,
+    *,
+    client: Any = None,
+    backend: Any = "claude-code",
+    sandbox: Any = None,
+    paper_id: str | None = None,
+    work_dir: str | Path | None = None,
+    run_dir: str | Path | None = None,
+    metax_nodes: Any = None,
+    timeout: float | None = None,
+    baseline_check: bool = True,
+    do_score: bool = True,
+) -> ReproduceResult:
+    b = build_task(
+        paper,
+        claim_id,
+        client=client,
+        paper_id=paper_id,
+        work_dir=work_dir,
+        baseline_check=baseline_check,
+    )
+
+    # 6-7. launch host sandbox + run agent + record trajectory
+    runtime = launch(b.task_dir, run_dir, backend=backend, sandbox=sandbox, metax_nodes=metax_nodes)
+    rr = run(runtime, timeout=timeout)
+
+    # 8. hidden scoring
+    reward = score(b.task_dir, runtime.workspace) if do_score else None
+
+    return ReproduceResult(
+        paper_id=b.paper_id,
+        claim_id=b.claim_id,
+        claim_spec=b.claim_spec,
+        claim_spec_path=b.claim_spec_path,
+        task_dir=b.task_dir,
         run_result=rr,
         trajectory_path=rr.trajectory_path,
         reward=reward,
-        validation=problems,
+        validation=b.validation,
     )

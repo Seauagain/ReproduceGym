@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from reprogym.metax import nodes_to_env
+from reprogym.redact import collect_secrets, redact_trajectory
 from reprogym.sandbox.launcher import Runtime
 from reprogym.trajectory import Trajectory
 
@@ -67,6 +68,10 @@ def run(
     sid = traj.meta.get("session_id") or session_id
     traj.meta.setdefault("session_id", sid)
     traj.meta["returncode"] = result.returncode
+
+    # Mask injected credentials before the trajectory is persisted / 回流训练.
+    secret_keys = list(getattr(runtime.backend, "env_keys", ())) + ["BOHRIUM_ACCESS_KEY"]
+    redact_trajectory(traj, collect_secrets(env, secret_keys))
 
     path = _next_trajectory_path(runtime.run_dir)
     traj.dump(path)

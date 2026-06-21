@@ -9,11 +9,13 @@ in-sandbox agent may ssh into. Nothing heavy happens here; runner does the work.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from reprogym.compute.sources import load_inventory
 from reprogym.config import REPO_ROOT
 from reprogym.metax import MetaxNode, install_compute_access, load_metax_config, load_nodes
 from reprogym.sandbox.backends import AgentBackend, get_backend
@@ -38,6 +40,17 @@ def _default_run_dir(task_id: str) -> Path:
     return REPO_ROOT / "runs" / f"{task_id}-{stamp}"
 
 
+def _resolve_compute_spec(compute: str | None) -> str | None:
+    """Compute source spec: explicit arg > REPROGYM_COMPUTE > REPROGYM_SERVERS_MD."""
+    if compute:
+        return compute
+    if os.environ.get("REPROGYM_COMPUTE"):
+        return os.environ["REPROGYM_COMPUTE"]
+    if os.environ.get("REPROGYM_SERVERS_MD"):
+        return "servers-md:" + os.environ["REPROGYM_SERVERS_MD"]
+    return None
+
+
 def launch(
     task_dir: str | Path,
     run_dir: str | Path | None = None,
@@ -45,6 +58,7 @@ def launch(
     backend: str | AgentBackend = "claude-code",
     sandbox: Sandbox | None = None,
     metax_nodes: Any = None,
+    compute: str | None = None,
     clean: bool = False,
 ) -> Runtime:
     task_dir = Path(task_dir)
@@ -55,10 +69,14 @@ def launch(
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = prepare_workspace(task_dir, run_dir / "workspace", clean=clean)
 
-    # Resolve MetaX nodes: explicit arg > config file > REPROGYM_METAX_NODES env.
+    # Resolve nodes: explicit arg > compute source (servers.md/yaml/json) >
+    # yaml config file > REPROGYM_METAX_NODES env.
     cfg = load_metax_config()
+    spec = _resolve_compute_spec(compute)
     if metax_nodes is not None:
         nodes = load_nodes(metax_nodes)
+    elif spec:
+        nodes = load_inventory(spec)
     elif cfg.get("nodes"):
         nodes = cfg["nodes"]
     else:

@@ -6,6 +6,7 @@ var -- lives here as small, optional adapters. Adding a platform or format means
 adding one parser + one registry entry; core and CLI do not change.
 """
 
+from reprogym.compute.providers import ComputeProvider, LbgProvider, render_lbg_card
 from reprogym.compute.servers_md import parse_servers_md, parse_servers_md_file
 from reprogym.compute.sources import SOURCES, load_inventory
 
@@ -14,4 +15,7 @@ __all__ = [
     "parse_servers_md_file",
     "load_inventory",
     "SOURCES",
+    "ComputeProvider",
+    "LbgProvider",
+    "render_lbg_card",
 ]

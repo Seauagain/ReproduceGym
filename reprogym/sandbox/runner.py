@@ -54,6 +54,8 @@ def run(
     env = runtime.backend.build_env(_os_environ())
     if runtime.metax_nodes:
         env["REPROGYM_METAX_NODES"] = nodes_to_env(runtime.metax_nodes)
+    for provider in getattr(runtime, "providers", []):
+        env.update(provider.env(run_tag=runtime.run_tag))
 
     result = runtime.sandbox.run(argv, cwd=runtime.workspace, env=env, timeout=timeout)
 
@@ -71,6 +73,8 @@ def run(
 
     # Mask injected credentials before the trajectory is persisted / 回流训练.
     secret_keys = list(getattr(runtime.backend, "env_keys", ())) + ["BOHRIUM_ACCESS_KEY"]
+    for provider in getattr(runtime, "providers", []):
+        secret_keys += list(getattr(provider, "env_keys", ()))
     redact_trajectory(traj, collect_secrets(env, secret_keys))
 
     path = _next_trajectory_path(runtime.run_dir)

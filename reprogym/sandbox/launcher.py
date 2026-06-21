@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from reprogym.compute.providers import ComputeProvider, LbgProvider
 from reprogym.compute.sources import load_inventory
 from reprogym.config import REPO_ROOT
 from reprogym.metax import MetaxNode, install_compute_access, load_metax_config, load_nodes
@@ -33,11 +35,19 @@ class Runtime:
     user_query: str
     metadata: dict[str, Any] = field(default_factory=dict)
     metax_nodes: dict[str, MetaxNode] = field(default_factory=dict)
+    providers: list[ComputeProvider] = field(default_factory=list)
+    run_tag: str = ""
 
 
 def _default_run_dir(task_id: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return REPO_ROOT / "runs" / f"{task_id}-{stamp}"
+
+
+def _run_tag(run_dir: Path) -> str:
+    """Stable per-run label; provisioned sandboxes are named with this prefix so
+    the host teardown sweep can reclaim exactly this run's resources."""
+    return re.sub(r"[^a-z0-9-]+", "-", run_dir.name.lower()).strip("-") or "reprogym-run"
 
 
 def _resolve_compute_spec(compute: str | None) -> str | None:
@@ -69,20 +79,29 @@ def launch(
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = prepare_workspace(task_dir, run_dir / "workspace", clean=clean)
 
-    # Resolve nodes: explicit arg > compute source (servers.md/yaml/json) >
-    # yaml config file > REPROGYM_METAX_NODES env.
+    # Resolve compute: explicit ssh nodes > compute source > yaml config > env.
+    # A spec may select ssh nodes (servers.md/yaml/json) OR a provisioned-sandbox
+    # provider (lbg:<params>); the two models are mutually exclusive per run.
     cfg = load_metax_config()
     spec = _resolve_compute_spec(compute)
+    nodes: dict[str, MetaxNode] = {}
+    providers: list[ComputeProvider] = []
     if metax_nodes is not None:
         nodes = load_nodes(metax_nodes)
     elif spec:
-        nodes = load_inventory(spec)
+        scheme, _, rest = spec.partition(":")
+        if scheme == "lbg":
+            providers = [LbgProvider.from_spec(rest)]
+        else:
+            nodes = load_inventory(spec)
     elif cfg.get("nodes"):
         nodes = cfg["nodes"]
     else:
         nodes = load_nodes(None)
 
-    # If we have nodes, give the in-sandbox agent a usable way to reach them.
+    run_tag = _run_tag(run_dir)
+
+    # Give the in-sandbox agent a usable way to reach the chosen compute.
     if nodes:
         install_compute_access(
             workspace,
@@ -91,6 +110,8 @@ def launch(
             notes=cfg.get("notes", ""),
             remote_workdir=cfg.get("remote_workdir", ""),
         )
+    for provider in providers:
+        provider.install(workspace, run_tag=run_tag)
 
     return Runtime(
         task_dir=task_dir,
@@ -101,4 +122,6 @@ def launch(
         user_query=data_entry.get("user_query", ""),
         metadata=data_entry.get("metadata", {}),
         metax_nodes=nodes,
+        providers=providers,
+        run_tag=run_tag,
     )

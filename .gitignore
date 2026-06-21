@@ -1,0 +1,20 @@
+# background / design notes, not version-controlled
+docs/
+
+# throwaway demos / probes, never committed
+scratch/
+
+# secrets — keep local only; never push to git remote, never ship to compute nodes
+.env
+.env.*
+!.env.example
+
+# build artifacts / run outputs — keep the dir, ignore contents
+/runs/*
+!/runs/.gitkeep
+/datasets/*
+!/datasets/.gitkeep
+
+# python
+__pycache__/
+*.pyc

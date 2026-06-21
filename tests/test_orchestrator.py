@@ -27,6 +27,7 @@ CLAIMS_JSON = json.dumps(
             "metrics": [
                 {"name": "len_ratio", "formula": "mean(a)/mean(b)", "direction": "lower_is_better"}
             ],
+            "thresholds": [{"metric": "len_ratio", "pass_threshold": 0.8}],
         }
     ]
 )
@@ -54,7 +55,11 @@ class FakeLLM:
 
 
 class FakeAgentBackend(AgentBackend):
-    """Writes the required outputs (verdict=reproduced) then emits a stream."""
+    """Writes raw artifacts that genuinely pass recompute (mean(a)/mean(b)=0.7<=0.8).
+
+    result.json deliberately carries NO verdict -- scoring must recompute from
+    metrics.csv, not trust a self-report.
+    """
 
     name = "fake-agent"
 
@@ -62,9 +67,8 @@ class FakeAgentBackend(AgentBackend):
         script = (
             "set -e\n"
             "mkdir -p output\n"
-            'printf \'{"claim_id":"c1_std_bias","verdict":"reproduced","strict_reproduction":false}\' '
-            "> output/result.json\n"
-            "printf 'a\\n' > output/metrics.csv\n"
+            "printf '{}' > output/result.json\n"
+            "printf 'a,b\\n7,10\\n7,10\\n' > output/metrics.csv\n"
             "cat <<'REPRO_EOF'\n" + AGENT_STREAM + "\nREPRO_EOF\n"
         )
         return ["bash", "-c", script]

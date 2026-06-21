@@ -90,7 +90,9 @@ def merge_claim_spec(
         "statement": claim["statement"],
         "verifiability": claim.get("verifiability", "medium"),
         "metrics": [_norm_metric(m) for m in claim.get("metrics", [])],
-        "thresholds": thresholds if thresholds is not None else [],
+        "thresholds": (
+            thresholds if thresholds is not None else list(claim.get("thresholds") or [])
+        ),
         "required_outputs": required_outputs or dict(DEFAULT_REQUIRED_OUTPUTS),
         "verdict_rules": verdict_rules or {},
     }

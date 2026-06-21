@@ -26,10 +26,14 @@ class FakeAgentBackend(AgentBackend):
     name = "fake-agent"
 
     def build_command(self, prompt, *, session_id=None, resume=False):
+        # 50 rows/condition; mean(treatment.len)/mean(baseline.len)=70/100=0.7 <= 0.8.
         script = (
             "set -e\nmkdir -p output\n"
-            'printf \'{"verdict":"reproduced"}\' > output/result.json\n'
-            "printf 'a\\n' > output/metrics.csv\n"
+            "printf '{}' > output/result.json\n"
+            '{ echo "condition,step,len"; '
+            "for i in $(seq 0 49); do echo \"baseline,$i,100\"; done; "
+            "for i in $(seq 0 49); do echo \"treatment,$i,70\"; done; "
+            "} > output/metrics.csv\n"
             "cat <<'REPRO_EOF'\n" + AGENT_STREAM + "\nREPRO_EOF\n"
         )
         return ["bash", "-c", script]

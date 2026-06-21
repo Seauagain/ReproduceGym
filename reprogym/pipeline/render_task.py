@@ -66,6 +66,7 @@ def derive_contract(spec: dict[str, Any]) -> dict[str, Any]:
         "required_files": list(required.get("files", [])),
         "metrics_csv_columns": list(required.get("metrics_csv_columns", [])),
         "min_rows_per_condition": required.get("min_rows_per_condition"),
+        "conditions": [cond["label"] for cond in spec.get("conditions", [])],
         "verdicts": list(STANDARD_VERDICTS),
         "verdict_rules": spec.get("verdict_rules", {}),
     }
@@ -178,6 +179,12 @@ def render_task_md(spec: dict[str, Any]) -> str:
         add("```text")
         add(",".join(c["metrics_csv_columns"]))
         add("```")
+        if c["conditions"]:
+            add(
+                "\nThe `condition` column must contain the exact condition labels above "
+                f"({', '.join('`' + lbl + '`' for lbl in c['conditions'])}); the hidden "
+                "verifier filters rows by these labels when recomputing metrics."
+            )
         if c["min_rows_per_condition"]:
             add(f"\nAt least {c['min_rows_per_condition']} rows per condition.")
         add("")

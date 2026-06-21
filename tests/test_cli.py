@@ -82,8 +82,12 @@ def test_score_offline(tmp_path, valid_claim_spec, capsys):
     write_baseline_check(valid_claim_spec, task_dir / "reward")
     ws = tmp_path / "ws"
     (ws / "output").mkdir(parents=True)
-    (ws / "output" / "metrics.csv").write_text("x\n", encoding="utf-8")
-    (ws / "output" / "result.json").write_text('{"verdict": "reproduced"}', encoding="utf-8")
+    rows = ["condition,step,len"]
+    rows += [f"baseline,{i},100" for i in range(50)]
+    rows += [f"treatment,{i},70" for i in range(50)]
+    (ws / "output" / "metrics.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    # result.json carries no verdict; scoring recomputes from metrics.csv.
+    (ws / "output" / "result.json").write_text("{}", encoding="utf-8")
     rc = cli.main(["score", str(task_dir), str(ws)])
     assert rc == 0
     assert capsys.readouterr().out.strip() == "0.8"

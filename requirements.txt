@@ -1,0 +1,6 @@
+# Runtime dependencies (cloud-API pipeline; no local model / GPU).
+jsonschema
+PyYAML
+anthropic
+openai
+# MinerU parsing is used via the `mineru-open-api` CLI (pip install mineru-open-api).

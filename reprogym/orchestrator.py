@@ -2,10 +2,11 @@
 
 Steps (see docs/background.md):
   1. parse            pipeline.parse           PDF -> paper.md + figures/
-  2. extract claims   pipeline.extract_claims  Claude -> claim text + anchors
+  2. extract claims   pipeline.extract_claims  Claude -> claims (type/cost/verifiability)
      figure params    pipeline.extract_figure_params  Qwen-VL -> params/targets
+     triage           pipeline.triage          -> paper_triage.yaml + resource_profile.yaml
      merge            pipeline.merge_claim_spec       -> canonical claim spec
-  3. build task       pipeline.render_task + build-task skill -> sandbox task
+  3. build task       pipeline.render_task + build-task skill -> sandbox task (no private/)
                       pipeline.validate_task   consistency gate
   4. launch sandbox   sandbox.launcher         host sandbox, inject .env key
   5. run + trace      sandbox.runner           issue user_query, record trajectory

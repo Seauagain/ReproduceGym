@@ -7,6 +7,27 @@ sandbox task** (`sandboxes/<paper>/tasks/<claim_id>/`).
 Rule of thumb: **one source of truth (the claim spec), deterministic render,
 one hand-authored file (`reward/check.py`), one consistency gate.**
 
+## 0. Pipeline & paper-level layout
+
+```
+parse (MinerU) → extract_claims (Claude) + extract_figure_params (Qwen-VL)
+  → triage (Claude) → merge_claim_spec → render_task → build-task skill → validate_task
+```
+
+```
+sandboxes/<paper_id>/
+├── paper.json              # metadata
+├── paper.md / figures/     # parsed paper + extracted figures (public)
+├── paper_triage.yaml       # which claims build / defer / v0 + rationale (triage)
+├── resource_profile.yaml   # per-claim cost / requires_training (budget source)
+├── claims/<claim_id>.yaml  # SOURCE OF TRUTH (git, reviewed); replaces private/targets.yaml
+└── tasks/<claim_id>/       # rendered, ClawGym-pure (below)
+```
+
+The claim spec carries triage/budget fields too (`claim_type`,
+`requires_training`, `cost`, `verifiability`) and the richer params taxonomy
+(`local_substitute_allowed`, `affects_strict_reproduction`, `applies_to_claim`).
+
 ## 1. Output layout (must satisfy the ClawGym rollout contract)
 
 ```

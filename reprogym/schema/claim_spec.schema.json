@@ -2,10 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://reprogym/schema/claim_spec.schema.json",
   "title": "ReproGym Claim Spec",
-  "description": "Canonical single source of truth for ONE reproducible claim. All agent-visible sandbox-task artifacts (task.md, params.yaml, protocol.yaml, expected.json, data_entry.json) are deterministically RENDERED from this file by render_task.py; only reward/check.py is hand/agent-authored. Every leaf carries an `exposure` so the renderer can route it to input_files/ (visible) or reward/ (hidden). DRAFT — field set is expected to evolve.",
+  "description": "Canonical single source of truth for ONE reproducible claim. This file (sandboxes/<paper>/claims/<claim_id>.yaml) is also the human-readable, git-reviewed record — it REPLACES the legacy private/targets.yaml. All agent-visible sandbox-task artifacts (task.md, params.yaml, protocol.yaml, expected.json, data_entry.json) are deterministically RENDERED from it by render_task.py; only reward/check.py is hand/agent-authored. The rendered task is ClawGym-pure: {data_entry.json, input_files/, reward/} with NO private/ (ClawGym copies only reward/ at scoring). Every leaf carries an `exposure` so the renderer routes it to input_files/ (visible) or reward/ (hidden). DRAFT — field set is expected to evolve.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["claim_id", "paper_id", "tier", "exposure_policy", "statement", "metrics", "thresholds", "required_outputs", "verdict_rules"],
+  "required": ["claim_id", "paper_id", "claim_type", "tier", "exposure_policy", "statement", "verifiability", "metrics", "thresholds", "required_outputs", "verdict_rules"],
   "properties": {
     "claim_id": {
       "type": "string",
@@ -15,6 +15,25 @@
     "paper_id": {
       "type": "string",
       "description": "Owning paper id, e.g. dr-grpo-2503.20783."
+    },
+    "claim_type": {
+      "type": "string",
+      "enum": ["eval_only", "mechanism", "ablation", "scaling", "headline", "diagnostic"],
+      "description": "Kind of claim; drives triage and verifier shape."
+    },
+    "requires_training": {
+      "type": "boolean",
+      "description": "Whether reproducing the claim needs a training run (vs eval-only). Informs budget + on/off-policy use."
+    },
+    "cost": {
+      "type": "string",
+      "enum": ["S", "M", "L", "XL"],
+      "description": "Coarse compute/time/engineering cost estimate; feeds resource_profile and v0 selection."
+    },
+    "verifiability": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "How cleanly the claim can be checked by recomputing metrics from agent outputs."
     },
     "tier": {
       "type": "string",
@@ -83,6 +102,9 @@
             "enum": ["paper_specified", "author_repo_config", "paper_unspecified"],
             "description": "Drives strict vs approximate reproduction."
           },
+          "applies_to_claim": {"type": "boolean", "default": true, "description": "Whether this param is relevant to THIS claim."},
+          "local_substitute_allowed": {"type": "boolean", "description": "If paper_unspecified, may the agent substitute a local value?"},
+          "affects_strict_reproduction": {"type": "boolean", "description": "Whether substituting/missing this blocks a strict verdict."},
           "required_for_strict": {"type": "boolean"},
           "exposure": {"type": "string", "enum": ["visible", "hidden"], "default": "visible"}
         }

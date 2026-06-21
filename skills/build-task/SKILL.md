@@ -17,6 +17,7 @@ logic — because doing it correctly needs an agent loop, not a single prompt.
 - `sandboxes/<paper>/claims/<claim_id>.yaml` (claim spec, single source of truth)
 - the rendered `tasks/<claim_id>/` (for the constants to match)
 - `reprogym/schema/task_contract.md` (the contract + consistency rules)
+- `prompts/paper_to_sandbox.md` (master; this skill is its steps 5–6)
 
 ## Procedure (to implement)
 

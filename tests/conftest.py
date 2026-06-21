@@ -63,8 +63,8 @@ def valid_claim_spec() -> dict:
                 "min_rows_per_condition": 50,
             },
             "verdict_rules": {
-                "reproduced": ["length_ratio <= 0.8"],
-                "failed": ["length_ratio > 0.8"],
+                "reproduced": ["length_ratio meets pass_threshold"],
+                "failed": ["length_ratio misses pass_threshold"],
             },
             "reward": {
                 "base_by_verdict": {"reproduced": 0.8, "failed": 0.35, "invalid": 0.0},

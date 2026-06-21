@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from reprogym.config import REPO_ROOT
-from reprogym.metax import MetaxNode, load_nodes
+from reprogym.metax import MetaxNode, install_compute_access, load_metax_config, load_nodes
 from reprogym.sandbox.backends import AgentBackend, get_backend
 from reprogym.sandbox.sandbox import LocalSandbox, Sandbox
 from reprogym.sandbox.workspace import prepare_workspace
@@ -55,6 +55,25 @@ def launch(
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = prepare_workspace(task_dir, run_dir / "workspace", clean=clean)
 
+    # Resolve MetaX nodes: explicit arg > config file > REPROGYM_METAX_NODES env.
+    cfg = load_metax_config()
+    if metax_nodes is not None:
+        nodes = load_nodes(metax_nodes)
+    elif cfg.get("nodes"):
+        nodes = cfg["nodes"]
+    else:
+        nodes = load_nodes(None)
+
+    # If we have nodes, give the in-sandbox agent a usable way to reach them.
+    if nodes:
+        install_compute_access(
+            workspace,
+            nodes,
+            launch_template=cfg.get("launch_template", ""),
+            notes=cfg.get("notes", ""),
+            remote_workdir=cfg.get("remote_workdir", ""),
+        )
+
     return Runtime(
         task_dir=task_dir,
         run_dir=run_dir,
@@ -63,5 +82,5 @@ def launch(
         sandbox=sandbox or LocalSandbox(),
         user_query=data_entry.get("user_query", ""),
         metadata=data_entry.get("metadata", {}),
-        metax_nodes=load_nodes(metax_nodes),
+        metax_nodes=nodes,
     )

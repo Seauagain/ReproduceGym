@@ -117,3 +117,25 @@ def test_metax_inventory_forwarded_into_sandbox_env(tmp_path, task_dir):
     assert forwarded["verl"]["host"] == "10.0.0.9"
     assert str(rec.cwd) == str(rt.workspace)
     assert rec.argv[0] == "bash"
+
+
+def test_launch_installs_compute_access_when_nodes_given(tmp_path, task_dir):
+    rt = launch(
+        task_dir,
+        tmp_path / "run",
+        backend=FakeBackend(STREAM),
+        sandbox=LocalSandbox(),
+        metax_nodes={"verl": {"host": "10.0.0.9", "user": "root"}},
+    )
+    assert (rt.workspace / "metax_nodes.json").is_file()
+    assert (rt.workspace / "metax_ssh.py").is_file()
+    assert (rt.workspace / "compute_access.md").is_file()
+    assert "Compute access" in (rt.workspace / "task.md").read_text()
+
+
+def test_launch_no_compute_access_without_nodes(tmp_path, task_dir, monkeypatch):
+    monkeypatch.delenv("REPROGYM_METAX_NODES", raising=False)
+    monkeypatch.setenv("REPROGYM_METAX_CONFIG", str(tmp_path / "absent.yaml"))
+    rt = launch(task_dir, tmp_path / "run", backend=FakeBackend(STREAM), sandbox=LocalSandbox())
+    assert not (rt.workspace / "metax_ssh.py").exists()
+    assert not (rt.workspace / "compute_access.md").exists()

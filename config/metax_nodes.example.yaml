@@ -1,0 +1,38 @@
+# MetaX / verl GPU node inventory for ReproGym.
+#
+# Copy to config/metax_nodes.yaml (gitignored) and fill in real values. At launch
+# time these nodes are turned into:
+#   - metax_nodes.json  (alias -> connection info) in the agent workspace
+#   - metax_ssh.py      (self-contained wrapper: python3 metax_ssh.py <alias> "<cmd>")
+#   - compute_access.md + a "Compute access" section appended to task.md
+# so the in-sandbox reproduction agent knows how to reach the nodes.
+#
+# Prereq: the host (or Docker-mounted ~/.ssh) must already be able to ssh to these
+# hosts with the given key. Test with:  ssh -i <key_path> <user>@<host> hostname
+
+nodes:
+  verl-grpo:
+    host: 10.0.0.10          # node IP or hostname
+    user: root
+    port: 22
+    key_path: ~/.ssh/id_ed25519
+    workdir: /workspace/verl  # where verl lives on the remote node
+  # verl-pool:
+  #   host: 10.0.0.11
+  #   user: root
+  #   key_path: ~/.ssh/id_ed25519
+  #   workdir: /workspace/verl
+
+# Optional: default remote working directory shown to the agent.
+remote_workdir: /workspace/verl
+
+# Optional: a launch template the agent can adapt for verl training runs.
+# Placeholders are illustrative; the agent fills them in.
+launch_template: |
+  cd {workdir} && \
+  python3 -m verl.trainer.main_ppo --config-name <config> trainer.total_epochs=<n>
+
+# Optional: free-text gotchas shown to the agent (queueing, env activation, etc.).
+notes: |
+  Activate the training env before launching (e.g. `conda activate verl`).
+  Long runs: launch under tmux/nohup and poll logs; do not block the ssh session.

@@ -40,3 +40,15 @@ def test_docker_build_argv(tmp_path):
     # image precedes the agent argv
     img_idx = argv.index("repro:latest")
     assert argv[img_idx + 1 :] == ["claude", "-p", "x"]
+
+
+def test_docker_build_argv_mounts_ssh_by_default(tmp_path):
+    sb = DockerSandbox(image="repro:latest", ssh_dir=str(tmp_path / ".ssh"))
+    argv = sb.build_argv(["claude"], cwd=tmp_path)
+    assert f"{(tmp_path / '.ssh')}:/root/.ssh:ro" in argv
+
+
+def test_docker_build_argv_ssh_mount_can_be_disabled(tmp_path):
+    sb = DockerSandbox(image="repro:latest", mount_ssh=False)
+    argv = sb.build_argv(["claude"], cwd=tmp_path)
+    assert not any(":/root/.ssh:ro" in a for a in argv)

@@ -9,6 +9,9 @@ scratch/
 .env.*
 !.env.example
 
+# real MetaX node inventory (hosts/keys) — local only; ship the .example template
+/config/metax_nodes.yaml
+
 # build artifacts / run outputs — keep the dir, ignore contents
 /runs/*
 !/runs/.gitkeep

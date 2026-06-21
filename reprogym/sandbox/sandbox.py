@@ -55,10 +55,20 @@ class LocalSandbox(Sandbox):
 class DockerSandbox(Sandbox):
     name = "docker"
 
-    def __init__(self, image: str, *, mount: str = "/workspace", docker_bin: str = "docker"):
+    def __init__(
+        self,
+        image: str,
+        *,
+        mount: str = "/workspace",
+        docker_bin: str = "docker",
+        mount_ssh: bool = True,
+        ssh_dir: str = "~/.ssh",
+    ):
         self.image = image
         self.mount = mount
         self.docker_bin = docker_bin
+        self.mount_ssh = mount_ssh
+        self.ssh_dir = ssh_dir
 
     def build_argv(
         self, argv: Sequence[str], *, cwd: str | Path, env_keys: Sequence[str] = ()
@@ -72,6 +82,9 @@ class DockerSandbox(Sandbox):
             "-w",
             self.mount,
         ]
+        if self.mount_ssh:
+            # read-only ssh creds so the in-container agent can ssh to MetaX
+            docker += ["-v", f"{Path(self.ssh_dir).expanduser()}:/root/.ssh:ro"]
         for key in env_keys:
             docker += ["-e", key]  # forward NAME only; value supplied via env
         docker.append(self.image)

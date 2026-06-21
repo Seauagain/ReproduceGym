@@ -15,10 +15,21 @@ Credentials named in ``env_keys`` are also what the trajectory redactor masks.
 
 from __future__ import annotations
 
+import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Sequence
 
 from reprogym.config import get_env, load_dotenv
+
+# A compute CLI runner: argv -> stdout. Injectable so teardown is testable offline.
+CliRunner = Callable[[Sequence[str]], str]
+
+
+def default_cli_runner(argv: Sequence[str]) -> str:
+    proc = subprocess.run(list(argv), capture_output=True, text=True)
+    return proc.stdout
 
 
 class ComputeProvider:
@@ -30,6 +41,9 @@ class ComputeProvider:
 
     def env(self, *, run_tag: str) -> dict[str, str]:
         return {}
+
+    def teardown(self, run_tag: str, *, runner: CliRunner | None = None) -> list[str]:
+        return []
 
 
 @dataclass
@@ -90,6 +104,46 @@ class LbgProvider(ComputeProvider):
             out["BOHRIUM_PROJECT_ID"] = self.project_id
         return out
 
+    def teardown(self, run_tag: str, *, runner: CliRunner | None = None) -> list[str]:
+        """Host-side cost guard: kill every sandbox whose name starts with the
+        run_tag. Best-effort and idempotent -- never raises into the caller."""
+        runner = runner or default_cli_runner
+        try:
+            listed = runner(["lbg", "sdbx", "list", "--json"])
+            items = _parse_sandbox_list(listed)
+        except Exception:
+            return []
+        killed: list[str] = []
+        for it in items:
+            name = str(it.get("name") or it.get("sandbox_name") or it.get("sandboxName") or "")
+            sid = (
+                it.get("id") or it.get("sandbox_id")
+                or it.get("sandboxId") or it.get("sandboxID")
+            )
+            if sid and name.startswith(run_tag):
+                try:
+                    runner(["lbg", "sdbx", "kill", "--force", str(sid)])
+                    killed.append(str(sid))
+                except Exception:
+                    continue
+        return killed
+
+
+def _parse_sandbox_list(raw: str) -> list[dict]:
+    """`lbg sdbx list --json` may be a bare list or wrapped; be liberal."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)]
+    if isinstance(data, dict):
+        for key in ("sandboxes", "data", "items", "list"):
+            v = data.get(key)
+            if isinstance(v, list):
+                return [x for x in v if isinstance(x, dict)]
+    return []
+
 
 def render_lbg_card(provider: LbgProvider, *, run_tag: str) -> str:
     """Markdown the in-sandbox agent acts on to provision a Bohrium GPU sandbox."""
@@ -136,7 +190,8 @@ def render_lbg_card(provider: LbgProvider, *, run_tag: str) -> str:
         "### \u6253\u5206\u4ea7\u7269",
         "- \u8bc4\u5206\u5728\u4f60\u672c\u5730 workspace \u7684 `output/metrics.csv` \u4e0a\u91cd\u7b97\uff08\u89c1 task \u7684 contract\uff09\u3002"
         "Bohrium \u4e0a\u8bad\u7ec3\u540e\u52a1\u5fc5 `files read` \u628a `metrics.csv` \u7b49\u4ea7\u7269\u62f7\u56de\u672c\u5730 `output/`\u3002",
-        f"- \u515c\u5e95\uff1a\u82e5\u65e0\u6cd5\u7ed9\u6c99\u76d2\u547d\u540d\uff0c\u628a\u6bcf\u4e2a `create` \u8fd4\u56de\u7684 sandbox_id \u8ffd\u52a0\u5230 "
-        "`output/.bohrium_sandboxes`\uff08\u4e00\u884c\u4e00\u4e2a\uff09\uff0chost \u636e\u6b64\u56de\u6536\u3002",
+        f"- \u515c\u5e95\uff1ahost \u6309 `{run_tag}` \u540d\u5b57\u524d\u7f00\u81ea\u52a8\u56de\u6536\u3002\u4e07\u4e00\u4f60\u65e0\u6cd5\u7ed9\u6c99\u76d2\u547d\u540d\uff0c"
+        "\u4efb\u52a1\u7ed3\u675f\u65f6\u52a1\u5fc5\u81ea\u5df1 `kill --force` \u6389\uff0c\u5e76\u628a sandbox_id \u8bb0\u5230 "
+        "`output/.bohrium_sandboxes` \u5907\u67e5\u3002",
     ]
     return "\n".join(lines) + "\n"

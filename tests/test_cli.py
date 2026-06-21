@@ -18,6 +18,14 @@ def test_parser_reproduce_args():
     assert args.claim == "c1" and args.no_score is True
 
 
+def test_parser_reproduce_compute_node():
+    args = cli.build_parser().parse_args(
+        ["reproduce", "p.md", "--compute", "lbg:project=1", "--node", "verl-grpo-44487"]
+    )
+    assert args.compute == "lbg:project=1"
+    assert args.node == "verl-grpo-44487"
+
+
 def test_no_command_errors():
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args([])

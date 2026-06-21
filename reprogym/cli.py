@@ -41,6 +41,8 @@ def _cmd_reproduce(args) -> int:
         run_dir=args.run_dir,
         do_score=not args.no_score,
         metax_nodes=json.loads(args.metax) if args.metax else None,
+        compute=args.compute,
+        node=args.node,
     )
     print(f"claim_id:   {res.claim_id}")
     print(f"task_dir:   {res.task_dir}")
@@ -100,6 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--backend", default="claude-code")
     r.add_argument("--no-score", action="store_true")
     r.add_argument("--metax", help="JSON node inventory forwarded to the sandbox")
+    r.add_argument(
+        "--compute",
+        help="compute source: a path (servers.md/.yaml/.json) or scheme "
+        "(servers-md:<path>, lbg:<project=..,gpu=..,timeout=..>)",
+    )
+    r.add_argument("--node", help="select a single ssh node alias from the inventory")
     r.set_defaults(func=_cmd_reproduce)
 
     b = sub.add_parser("build", help="pipeline only: paper -> validated task")

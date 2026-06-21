@@ -22,7 +22,8 @@ from reprogym.pipeline.render_check import write_baseline_check
 from reprogym.pipeline.render_task import render_task
 from reprogym.pipeline.validate_task import validate_task
 from reprogym.sandbox.launcher import launch
-from reprogym.sandbox.runner import RunResult, run
+from reprogym.sandbox.run_guard import run_guarded
+from reprogym.sandbox.runner import RunResult
 from reprogym.verify import score
 
 
@@ -132,6 +133,9 @@ def reproduce(
     work_dir: str | Path | None = None,
     run_dir: str | Path | None = None,
     metax_nodes: Any = None,
+    compute: str | None = None,
+    node: str | None = None,
+    lbg_runner: Any = None,
     timeout: float | None = None,
     baseline_check: bool = True,
     do_score: bool = True,
@@ -145,9 +149,18 @@ def reproduce(
         baseline_check=baseline_check,
     )
 
-    # 6-7. launch host sandbox + run agent + record trajectory
-    runtime = launch(b.task_dir, run_dir, backend=backend, sandbox=sandbox, metax_nodes=metax_nodes)
-    rr = run(runtime, timeout=timeout)
+    # 6-7. launch host sandbox + run agent + record trajectory. The run guard
+    # always reclaims provisioned (e.g. Bohrium) compute, even on error/timeout.
+    runtime = launch(
+        b.task_dir,
+        run_dir,
+        backend=backend,
+        sandbox=sandbox,
+        metax_nodes=metax_nodes,
+        compute=compute,
+        node=node,
+    )
+    rr = run_guarded(runtime, timeout=timeout, runner=lbg_runner)
 
     # 8. hidden scoring
     reward = score(b.task_dir, runtime.workspace) if do_score else None

@@ -69,6 +69,7 @@ def launch(
     sandbox: Sandbox | None = None,
     metax_nodes: Any = None,
     compute: str | None = None,
+    node: str | None = None,
     clean: bool = False,
 ) -> Runtime:
     task_dir = Path(task_dir)
@@ -98,6 +99,12 @@ def launch(
         nodes = cfg["nodes"]
     else:
         nodes = load_nodes(None)
+
+    # Host-side node selection: narrow the ssh inventory to a single alias.
+    if node:
+        if node not in nodes:
+            raise KeyError(f"node {node!r} not in inventory; have {sorted(nodes)}")
+        nodes = {node: nodes[node]}
 
     run_tag = _run_tag(run_dir)
 

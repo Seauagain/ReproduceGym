@@ -1,10 +1,10 @@
-"""Flatten authored sandboxes/ into a rollout-ready dataset.
+"""Flatten rendered task dirs into a rollout-ready dataset.
 
 The ClawGym rollout discovers tasks ONE level deep and requires every child to be
-a task dir with data_entry.json. The authoring layout is nested
-(sandboxes/<paper>/tasks/<claim>/), so we build a flat datasets/<name>/ of
-symlinks pointing at the selected task dirs and hand that path to the rollout as
-source_path. datasets/ is a build artifact (gitignored).
+a task dir with data_entry.json. The pipeline layout is nested
+(runs/<paper>/03-task/<claim>/), so we build a flat datasets/<name>/ of symlinks
+pointing at the selected task dirs and hand that path to the rollout as
+source_path. datasets/ is a build artifact (gitignored, auto-created).
 """
 
 from __future__ import annotations

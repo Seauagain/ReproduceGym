@@ -5,7 +5,7 @@ a schema-valid canonical spec). It selects only schema-allowed fields, fills the
 required scaffolding (paper_id, tier, exposure_policy, required_outputs, ...) with
 explicit defaults, folds in figure-derived params, then validates against
 schema/claim_spec.schema.json. The result is the single source of truth and may be
-written to sandboxes/<paper>/claims/<claim_id>.yaml.
+written to runs/<paper>/02-spec/<claim_id>.yaml.
 """
 
 from __future__ import annotations

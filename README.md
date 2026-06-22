@@ -30,15 +30,16 @@ nodes are only reached by the in-sandbox agent (plain ssh) when it needs GPUs.
 ## Layout
 
 ```
-reproducegym/        host-side main control (cli, orchestrator, models, pipeline/, sandbox/, verify, trajectory, dataset)
+reproducegym/        host-side main control (cli, orchestrator, models, pipeline/, sandbox/, verify, trajectory, runlayout, dataset)
   schema/        claim_spec.schema.json + task_contract.md  ← the heart
+agent_trace/     API-level trajectory capture (passthrough proxy + message-level builders + raw/SFT exporters)
 prompts/         LLM prompts for deterministic steps (extract_claims, extract_figure_params)
 skills/          build-task/ — the one agentic step (authors reward/check.py)
-sandboxes/       produced units: claims/ (source of truth) + tasks/ (rendered, ClawGym-compatible)
-datasets/        flat symlink views for rollout (build artifact, gitignored)
-runs/            interactive run trajectories + outputs (gitignored)
+runs/<paper_id>/ per-paper pipeline output, numbered by stage (gitignored; self-describing via README.md + manifest.json):
+                 01-extract/  02-spec/  03-task/<claim>/  04-run/<claim>/NNN/
+datasets/        flat symlink views for rollout (build artifact, gitignored, auto-created)
 train/           rollout adapter into the ClawGym RL stack
-docs/  scratch/  background/design + throwaway probes (gitignored)
+docs/            background/design notes (gitignored)
 ```
 
 ## Setup

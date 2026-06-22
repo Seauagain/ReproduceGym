@@ -1,9 +1,9 @@
 """Canonical claim-spec loading + validation (single source of truth).
 
 A claim spec is the human-reviewed YAML/JSON record for ONE reproducible claim
-(`sandboxes/<paper>/claims/<claim_id>.yaml`). Everything else in a task is
-rendered from it. This module is the gate that keeps a spec well-formed before
-anything downstream (render_task, validate_task) trusts it.
+(`runs/<paper>/02-spec/<claim_id>.yaml`). Everything else in a task is rendered
+from it. This module is the gate that keeps a spec well-formed before anything
+downstream (render_task, validate_task) trusts it.
 
 Validation is driven by `schema/claim_spec.schema.json` (draft-07) so the schema
 stays the single definition of the field set; helpers here only read it.

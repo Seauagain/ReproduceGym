@@ -1,8 +1,8 @@
 # Task Render Contract
 
-How a canonical **claim spec** (`sandboxes/<paper>/claims/<claim_id>.yaml`,
+How a canonical **claim spec** (`runs/<paper>/02-spec/<claim_id>.yaml`,
 validated against `claim_spec.schema.json`) becomes a **ClawGym-compatible
-sandbox task** (`sandboxes/<paper>/tasks/<claim_id>/`).
+sandbox task** (`runs/<paper>/03-task/<claim_id>/`).
 
 Rule of thumb: **one source of truth (the claim spec), deterministic render,
 one hand-authored file (`reward/check.py`), one consistency gate.**
@@ -15,13 +15,14 @@ parse (MinerU) → extract_claims (Claude) + extract_figure_params (Qwen-VL)
 ```
 
 ```
-sandboxes/<paper_id>/
-├── paper.json              # metadata
-├── paper.md / figures/     # parsed paper + extracted figures (public)
-├── paper_triage.yaml       # which claims build / defer / v0 + rationale (triage)
-├── resource_profile.yaml   # per-claim cost / requires_training (budget source)
-├── claims/<claim_id>.yaml  # SOURCE OF TRUTH (git, reviewed); replaces private/targets.yaml
-└── tasks/<claim_id>/       # rendered, ClawGym-pure (below)
+runs/<paper_id>/
+├── paper.md                    # source paper snapshot
+├── 01-extract/
+│   ├── claims.json             # extracted claims
+│   ├── paper_triage.yaml       # which claims build / defer / v0 + rationale (triage)
+│   └── resource_profile.yaml   # per-claim cost / requires_training (budget source)
+├── 02-spec/<claim_id>.yaml     # SOURCE OF TRUTH (canonical claim spec)
+└── 03-task/<claim_id>/         # rendered, ClawGym-pure (below)
 ```
 
 The claim spec carries triage/budget fields too (`claim_type`,
@@ -31,7 +32,7 @@ The claim spec carries triage/budget fields too (`claim_type`,
 ## 1. Output layout (must satisfy the ClawGym rollout contract)
 
 ```
-tasks/<claim_id>/
+03-task/<claim_id>/
 ├── data_entry.json     # task_id, user_query, metadata (REQUIRED by ClawGym), input_mount_dir
 ├── input_files/        # the ONLY thing mounted into the agent workspace
 │   ├── task.md

@@ -28,7 +28,7 @@ class ClaudeClient:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
-        max_tokens: int = 8192,
+        max_tokens: int = 16384,
     ):
         load_dotenv()
         self.api_key = api_key or require_env("ANTHROPIC_API_KEY")
@@ -36,7 +36,10 @@ class ClaudeClient:
         self.model = model or get_env("ANTHROPIC_DEFAULT_OPUS_MODEL") or get_env(
             "ANTHROPIC_DEFAULT_SONNET_MODEL"
         )
-        self.max_tokens = max_tokens
+        # Claim extraction over a full paper can emit ~8-12k tokens of JSON; an
+        # 8k cap silently truncates -> invalid JSON. Allow an env override.
+        env_cap = get_env("REPROGYM_MAX_OUTPUT_TOKENS")
+        self.max_tokens = int(env_cap) if env_cap else max_tokens
         self._client = None
 
     def _ensure_client(self):

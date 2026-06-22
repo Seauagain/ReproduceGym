@@ -42,10 +42,12 @@ def score(
     clamp: bool = True,
 ) -> float:
     """Score a finished workspace against a task's hidden reward/reward.sh."""
-    reward_sh = Path(task_dir) / "reward" / "reward.sh"
+    # Absolute paths: reward.sh is run with cwd=workspace_dir, so a relative
+    # task_dir would otherwise fail to resolve (exit 127).
+    reward_sh = (Path(task_dir) / "reward" / "reward.sh").resolve()
     if not reward_sh.is_file():
         raise ScoreError(f"reward/reward.sh not found under {task_dir}")
-    workspace_dir = Path(workspace_dir)
+    workspace_dir = Path(workspace_dir).resolve()
     if not workspace_dir.is_dir():
         raise ScoreError(f"workspace dir does not exist: {workspace_dir}")
 

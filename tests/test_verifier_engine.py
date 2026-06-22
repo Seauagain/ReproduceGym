@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from reprogym.verifier.engine import (
+from reproducegym.verifier.engine import (
     VerifierError,
     parse_window,
     recompute,
@@ -143,7 +143,7 @@ def test_recompute_reproduced_when_metric_passes(tmp_path):
     assert rep["verdict"] == "reproduced"
     assert rep["reward"] == 0.8
     assert rep["metrics"]["length_ratio"]["passed"] is True
-    assert rep["scored_by"] == "reprogym-recompute"
+    assert rep["scored_by"] == "reproducegym-recompute"
 
 
 def test_recompute_failed_when_metric_misses(tmp_path):

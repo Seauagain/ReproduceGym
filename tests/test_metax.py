@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.metax import MetaxNode, load_nodes, nodes_to_env, ssh_command
+from reproducegym.metax import MetaxNode, load_nodes, nodes_to_env, ssh_command
 
 
 def test_load_nodes_from_dict():
@@ -27,13 +27,13 @@ def test_load_nodes_from_json_string():
 
 
 def test_load_nodes_from_env(monkeypatch):
-    monkeypatch.setenv("REPROGYM_METAX_NODES", json.dumps({"x": {"host": "envhost"}}))
+    monkeypatch.setenv("REPRODUCEGYM_METAX_NODES", json.dumps({"x": {"host": "envhost"}}))
     nodes = load_nodes()
     assert nodes["x"].host == "envhost"
 
 
 def test_load_nodes_empty_when_unset(monkeypatch):
-    monkeypatch.delenv("REPROGYM_METAX_NODES", raising=False)
+    monkeypatch.delenv("REPRODUCEGYM_METAX_NODES", raising=False)
     assert load_nodes() == {}
 
 

@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from reprogym import cli
-from reprogym.pipeline.render_check import write_baseline_check
-from reprogym.pipeline.render_task import render_task
+from reproducegym import cli
+from reproducegym.pipeline.render_check import write_baseline_check
+from reproducegym.pipeline.render_task import render_task
 
 
 def test_parser_reproduce_args():

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.claim_spec import (
+from reproducegym.claim_spec import (
     ClaimSpecError,
     dump_claim_spec,
     enum_values,

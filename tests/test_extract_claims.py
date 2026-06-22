@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.pipeline.extract_claims import (
+from reproducegym.pipeline.extract_claims import (
     ExtractError,
     build_prompt,
     extract_claims,

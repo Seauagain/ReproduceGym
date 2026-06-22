@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.compute.sources import load_inventory
+from reproducegym.compute.sources import load_inventory
 
 SERVERS_MD = """
 ```yaml

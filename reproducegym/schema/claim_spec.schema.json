@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://reproducegym/schema/claim_spec.schema.json",
+  "title": "ReproduceGym Claim Spec",
+  "description": "Canonical single source of truth for ONE reproducible claim. This file (sandboxes/<paper>/claims/<claim_id>.yaml) is also the human-readable, git-reviewed record — it REPLACES the legacy private/targets.yaml. All agent-visible sandbox-task artifacts (task.md, params.yaml, protocol.yaml, expected.json, data_entry.json) are deterministically RENDERED from it by render_task.py; only reward/check.py is hand/agent-authored. The rendered task is ClawGym-pure: {data_entry.json, input_files/, reward/} with NO private/ (ClawGym copies only reward/ at scoring). Every leaf carries an `exposure` so the renderer routes it to input_files/ (visible) or reward/ (hidden). DRAFT — field set is expected to evolve.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "paper_id", "claim_type", "tier", "exposure_policy", "statement", "verifiability", "metrics", "thresholds", "required_outputs", "verdict_rules"],
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "description": "Stable id, unique within the paper, e.g. c1_std_bias.",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "paper_id": {
+      "type": "string",
+      "description": "Owning paper id, e.g. dr-grpo-2503.20783."
+    },
+    "claim_type": {
+      "type": "string",
+      "enum": ["eval_only", "mechanism", "ablation", "scaling", "headline", "diagnostic"],
+      "description": "Kind of claim; drives triage and verifier shape."
+    },
+    "requires_training": {
+      "type": "boolean",
+      "description": "Whether reproducing the claim needs a training run (vs eval-only). Informs budget + on/off-policy use."
+    },
+    "cost": {
+      "type": "string",
+      "enum": ["S", "M", "L", "XL"],
+      "description": "Coarse compute/time/engineering cost estimate; feeds resource_profile and v0 selection."
+    },
+    "verifiability": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "How cleanly the claim can be checked by recomputing metrics from agent outputs."
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["T1_strict", "T2_proxy", "T3_exploratory"],
+      "description": "Reproduction difficulty/fidelity tier."
+    },
+    "exposure_policy": {
+      "type": "string",
+      "enum": ["v0_full_paper_public", "v1_excerpt_only", "v2_targets_hidden"],
+      "description": "Default routing of fields to visible vs hidden. Per-leaf `exposure` overrides this."
+    },
+    "statement": {
+      "type": "string",
+      "description": "One-sentence falsifiable claim. Renders into task.md \u00a71."
+    },
+    "anchors": {
+      "type": "array",
+      "description": "Pointers into the paper supporting the claim. Renders into task.md \u00a72.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["section", "figure", "table", "equation", "appendix"]},
+          "ref": {"type": "string", "description": "e.g. 'Sec. 3.1', 'Fig. 4', 'Appendix G Table 6'."},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "description": "Experimental conditions to compare (e.g. baseline vs treatment) and the switches between them. Renders into task.md \u00a73 + params.yaml algorithm_switches.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "description"],
+        "properties": {
+          "label": {"type": "string", "description": "Output label, e.g. 'grpo' / 'drgrpo'."},
+          "description": {"type": "string"},
+          "switches": {"type": "object", "description": "Free-form knobs that differ in this condition."}
+        }
+      }
+    },
+    "matched_variables": {
+      "type": "array",
+      "description": "Variables that MUST be held identical across conditions. Renders into task.md \u00a73.",
+      "items": {"type": "string"}
+    },
+    "params": {
+      "type": "array",
+      "description": "Parameter inventory with provenance. Populated by extract_claims (text) + extract_figure_params (Qwen-VL). Renders into params.yaml + task.md \u00a74.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string"},
+          "value": {"description": "Scalar/string/null. Null when paper_unspecified."},
+          "unit": {"type": "string"},
+          "source": {
+            "type": "string",
+            "description": "Provenance, e.g. 'Appendix G Table 6', 'Fig. 5', 'author repo @<commit>'."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["paper_specified", "author_repo_config", "paper_unspecified"],
+            "description": "Drives strict vs approximate reproduction."
+          },
+          "applies_to_claim": {"type": "boolean", "default": true, "description": "Whether this param is relevant to THIS claim."},
+          "local_substitute_allowed": {"type": "boolean", "description": "If paper_unspecified, may the agent substitute a local value?"},
+          "affects_strict_reproduction": {"type": "boolean", "description": "Whether substituting/missing this blocks a strict verdict."},
+          "required_for_strict": {"type": "boolean"},
+          "exposure": {"type": "string", "enum": ["visible", "hidden"], "default": "visible"}
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "description": "Primary metrics and how to recompute them. SINGLE SOURCE for task.md \u00a77/\u00a711, protocol.yaml metric_computation, expected.json, and reward/check.py.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "formula", "direction"],
+        "properties": {
+          "name": {"type": "string"},
+          "formula": {"type": "string", "description": "Recompute rule over metrics.csv, e.g. 'mean(grpo.grad_norm) / mean(drgrpo.grad_norm)'."},
+          "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
+          "window": {"type": "string", "description": "e.g. 'last_50_steps' with fallback rule."}
+        }
+      }
+    },
+    "thresholds": {
+      "type": "array",
+      "description": "Pass thresholds per metric. `exposure: hidden` keeps the target out of input_files/ (routed into reward/). Single source for both expected.json (if visible) and check.py constants.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric", "pass_threshold"],
+        "properties": {
+          "metric": {"type": "string", "description": "Must match a metrics[].name."},
+          "pass_threshold": {"type": "number"},
+          "rationale": {"type": "string"},
+          "exposure": {"type": "string", "enum": ["visible", "hidden"], "default": "hidden"}
+        }
+      }
+    },
+    "required_outputs": {
+      "type": "object",
+      "description": "What the agent must write under output/. SINGLE SOURCE for task.md \u00a76/\u00a78-10, protocol agent_must_write, and check.py REQUIRED_FILES/REQUIRED_COLUMNS.",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['output/result.json','output/metrics.csv', ...]."},
+        "metrics_csv_columns": {"type": "array", "items": {"type": "string"}},
+        "min_rows_per_condition": {"type": "integer"},
+        "result_json_fields": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "verdict_rules": {
+      "type": "object",
+      "description": "Maps situations to verdicts. SINGLE SOURCE for task.md \u00a711, protocol verdict_rules, check.py.",
+      "additionalProperties": false,
+      "properties": {
+        "reproduced": {"type": "array", "items": {"type": "string"}},
+        "failed": {"type": "array", "items": {"type": "string"}},
+        "inconclusive": {"type": "array", "items": {"type": "string"}},
+        "invalid": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "reward": {
+      "type": "object",
+      "description": "How check.py turns a verdict into a scalar in [0,1]. Hidden by construction (lives in reward/).",
+      "additionalProperties": false,
+      "properties": {
+        "base_by_verdict": {"type": "object", "description": "e.g. {reproduced_strict:0.9, reproduced:0.8, failed:0.35, inconclusive:0.2, invalid:0.0}."},
+        "evidence_bonus_cap": {"type": "number"}
+      }
+    },
+    "input_files": {
+      "type": "array",
+      "description": "Extra agent-visible assets to copy into input_files/ beyond rendered contracts (e.g. paper.md, figures/, starter/).",
+      "items": {"type": "string"}
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# MetaX / verl GPU node inventory for ReproGym.
+# MetaX / verl GPU node inventory for ReproduceGym.
 #
 # Copy to config/metax_nodes.yaml (gitignored) and fill in real values. At launch
 # time these nodes are turned into:

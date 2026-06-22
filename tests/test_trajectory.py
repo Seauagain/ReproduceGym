@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.trajectory import Trajectory
+from reproducegym.trajectory import Trajectory
 
 STREAM_LINES = [
     {"type": "system", "subtype": "init", "session_id": "sess-1", "model": "claude-x"},

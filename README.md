@@ -1,4 +1,4 @@
-# ReproGym
+# ReproduceGym
 
 Automated RL-literature reproduction as sandbox tasks. A paper becomes
 ClawGym-compatible sandbox tasks; each task runs in two modes from the same dir,
@@ -30,7 +30,7 @@ nodes are only reached by the in-sandbox agent (plain ssh) when it needs GPUs.
 ## Layout
 
 ```
-reprogym/        host-side main control (cli, orchestrator, models, pipeline/, sandbox/, verify, trajectory, dataset)
+reproducegym/        host-side main control (cli, orchestrator, models, pipeline/, sandbox/, verify, trajectory, dataset)
   schema/        claim_spec.schema.json + task_contract.md  ← the heart
 prompts/         LLM prompts for deterministic steps (extract_claims, extract_figure_params)
 skills/          build-task/ — the one agentic step (authors reward/check.py)

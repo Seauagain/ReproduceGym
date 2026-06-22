@@ -1,8 +1,8 @@
-"""Training rollout mode: feed ReproGym tasks to the RL rollout.
+"""Training rollout mode: feed ReproduceGym tasks to the RL rollout.
 
 Two entry points:
 
-- as_rollout_source: build a flat datasets/<name>/ (via reprogym.dataset) from
+- as_rollout_source: build a flat datasets/<name>/ (via reproducegym.dataset) from
   selected sandbox tasks and return it as the rollout source_path. Same task dir,
   zero changes -> the external rollout produces trajectories + reward for policy
   updates.
@@ -17,10 +17,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reprogym.dataset import build_dataset
-from reprogym.sandbox.launcher import launch
-from reprogym.sandbox.runner import run
-from reprogym.verify import score
+from reproducegym.dataset import build_dataset
+from reproducegym.sandbox.launcher import launch
+from reproducegym.sandbox.runner import run
+from reproducegym.verify import score
 
 
 def as_rollout_source(

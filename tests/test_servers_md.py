@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from reprogym.compute.servers_md import parse_servers_md
-from reprogym.metax import nodes_to_env
+from reproducegym.compute.servers_md import parse_servers_md
+from reproducegym.metax import nodes_to_env
 
 # A servers.md-shaped fixture: a proper per-node yaml block + a PROSE backup
 # password line (exactly how the real file stores passwords) + a shared block

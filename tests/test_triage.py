@@ -7,7 +7,7 @@ import json
 import pytest
 import yaml
 
-from reprogym.pipeline.triage import (
+from reproducegym.pipeline.triage import (
     TriageError,
     parse_triage_json,
     triage,

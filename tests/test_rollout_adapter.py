@@ -7,10 +7,10 @@ import json
 
 import pytest
 
-from reprogym.pipeline.render_check import write_baseline_check
-from reprogym.pipeline.render_task import render_task
-from reprogym.sandbox.backends import AgentBackend
-from reprogym.sandbox.sandbox import LocalSandbox
+from reproducegym.pipeline.render_check import write_baseline_check
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.sandbox.backends import AgentBackend
+from reproducegym.sandbox.sandbox import LocalSandbox
 from train.rollout_adapter import as_rollout_source, rollout
 
 AGENT_STREAM = "\n".join(

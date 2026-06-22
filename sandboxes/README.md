@@ -30,5 +30,5 @@ resource_profile.yaml) → `merge_claim_spec` → `claims/<id>.yaml` (source) �
 `render_task` → `tasks/<id>/` (deterministic) → `build-task` skill writes
 `reward/check.py` → `validate_task` consistency gate.
 
-Authoring layout is nested; the rollout needs a flat dir, so `reprogym.dataset`
+Authoring layout is nested; the rollout needs a flat dir, so `reproducegym.dataset`
 symlinks selected task dirs into `../datasets/<name>/`. See `schema/task_contract.md`.

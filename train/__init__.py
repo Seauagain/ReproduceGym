@@ -1,1 +1,1 @@
-"""ReproGym training-mode adapters (RL rollout integration)."""
+"""ReproduceGym training-mode adapters (RL rollout integration)."""

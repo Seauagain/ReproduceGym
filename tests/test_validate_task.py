@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from reprogym.pipeline.render_task import derive_contract, render_task
-from reprogym.pipeline.validate_task import validate_task
+from reproducegym.pipeline.render_task import derive_contract, render_task
+from reproducegym.pipeline.validate_task import validate_task
 
 
 def _write_check_py(task_dir, contract_overrides=None):

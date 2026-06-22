@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from reprogym.orchestrator import ReproduceError, reproduce
-from reprogym.sandbox.backends import AgentBackend
-from reprogym.sandbox.sandbox import LocalSandbox
+from reproducegym.orchestrator import ReproduceError, reproduce
+from reproducegym.sandbox.backends import AgentBackend
+from reproducegym.sandbox.sandbox import LocalSandbox
 
 PAPER_MD = """# A Critical Perspective on R1-Zero Training
 

@@ -1,6 +1,6 @@
 ---
 name: build-task
-description: Author the hidden verifier (reward/check.py) for a ReproGym sandbox task from a canonical claim spec. Use after render_task has produced the visible task files; this skill writes the one non-deterministic artifact and self-checks it against the claim spec.
+description: Author the hidden verifier (reward/check.py) for a ReproduceGym sandbox task from a canonical claim spec. Use after render_task has produced the visible task files; this skill writes the one non-deterministic artifact and self-checks it against the claim spec.
 ---
 
 # build-task
@@ -16,7 +16,7 @@ logic — because doing it correctly needs an agent loop, not a single prompt.
 
 - `sandboxes/<paper>/claims/<claim_id>.yaml` (claim spec, single source of truth)
 - the rendered `tasks/<claim_id>/` (for the constants to match)
-- `reprogym/schema/task_contract.md` (the contract + consistency rules)
+- `reproducegym/schema/task_contract.md` (the contract + consistency rules)
 - `prompts/paper_to_sandbox.md` (master; this skill is its steps 5–6)
 
 ## Procedure (to implement)

@@ -7,7 +7,7 @@ import stat
 
 import pytest
 
-from reprogym.verify import ScoreError, parse_reward, score
+from reproducegym.verify import ScoreError, parse_reward, score
 
 
 def _make_task(tmp_path, reward_sh_body: str):

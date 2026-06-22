@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reprogym.metax import (
+from reproducegym.metax import (
     METAX_SSH_SCRIPT,
     install_compute_access,
     load_metax_config,
@@ -41,8 +41,8 @@ def test_render_compute_access_lists_aliases_and_wrapper():
 
 def test_metax_ssh_script_is_valid_python_and_self_contained():
     compile(METAX_SSH_SCRIPT, "metax_ssh.py", "exec")
-    # must not depend on reprogym; resolves alias from sibling json + execs ssh
-    assert "import reprogym" not in METAX_SSH_SCRIPT
+    # must not depend on reproducegym; resolves alias from sibling json + execs ssh
+    assert "import reproducegym" not in METAX_SSH_SCRIPT
     assert "metax_nodes.json" in METAX_SSH_SCRIPT
     assert "os.execvp" in METAX_SSH_SCRIPT
 
@@ -108,6 +108,6 @@ def test_load_metax_config_reads_yaml(tmp_path):
 def test_load_metax_config_via_env(tmp_path, monkeypatch):
     cfg = tmp_path / "m.yaml"
     cfg.write_text("nodes:\n  v:\n    host: h\n", encoding="utf-8")
-    monkeypatch.setenv("REPROGYM_METAX_CONFIG", str(cfg))
+    monkeypatch.setenv("REPRODUCEGYM_METAX_CONFIG", str(cfg))
     loaded = load_metax_config()
     assert loaded["nodes"]["v"].host == "h"

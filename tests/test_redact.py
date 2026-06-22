@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from reprogym.redact import collect_secrets, redact_text, redact_trajectory
-from reprogym.trajectory import Trajectory
+from reproducegym.redact import collect_secrets, redact_text, redact_trajectory
+from reproducegym.trajectory import Trajectory
 
 
 def test_redact_text_masks_secret():

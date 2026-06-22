@@ -1,7 +1,7 @@
 # Prompt: Extract Reproducible Claims (Claude)
 
 > Consumed by `pipeline/extract_claims.py`. Derived from `paper_to_sandbox.md` step 1.
-> Output feeds the canonical claim spec (`reprogym/schema/claim_spec.schema.json`).
+> Output feeds the canonical claim spec (`reproducegym/schema/claim_spec.schema.json`).
 
 ## Role
 

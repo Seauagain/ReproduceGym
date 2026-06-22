@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from reprogym.claim_spec import load_claim_spec, validate_claim_spec
-from reprogym.pipeline.merge_claim_spec import MergeError, merge_claim_spec
+from reproducegym.claim_spec import load_claim_spec, validate_claim_spec
+from reproducegym.pipeline.merge_claim_spec import MergeError, merge_claim_spec
 
 CLAIM = {
     "claim_id": "c1_std_bias",

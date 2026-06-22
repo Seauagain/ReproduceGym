@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reprogym.pipeline.parse import (
+from reproducegym.pipeline.parse import (
     ParseError,
     build_mineru_argv,
     parse_pdf,

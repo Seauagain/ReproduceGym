@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from reprogym.compute.providers import LbgProvider
-from reprogym.pipeline.render_task import render_task
-from reprogym.sandbox.launcher import launch
-from reprogym.sandbox.run_guard import reclaim, run_guarded
-from reprogym.sandbox.sandbox import Sandbox
+from reproducegym.compute.providers import LbgProvider
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.sandbox.launcher import launch
+from reproducegym.sandbox.run_guard import reclaim, run_guarded
+from reproducegym.sandbox.sandbox import Sandbox
 from tests.test_runner import STREAM, FakeBackend, RecordingSandbox
 
 

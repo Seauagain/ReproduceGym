@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reprogym.sandbox.backends import (
+from reproducegym.sandbox.backends import (
     AgentBackend,
     ClaudeCodeBackend,
     CodexBackend,

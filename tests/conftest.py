@@ -1,4 +1,4 @@
-"""Shared fixtures for ReproGym tests."""
+"""Shared fixtures for ReproduceGym tests."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 # Prompt: Paper → Sandbox (master)
 
 > Authoritative master for turning a paper into RLVR-ready sandbox tasks.
-> Adapted from `RL/prompts/paper-to-sandbox.md` to ReproGym's conventions:
+> Adapted from `RL/prompts/paper-to-sandbox.md` to ReproduceGym's conventions:
 > a single source of truth (claim spec) + deterministic render + ClawGym-pure
 > tasks (no `private/`). Sub-prompts (`extract_claims.md`, `claim_triage.md`)
 > and the `build-task` skill are derived from this.
@@ -35,7 +35,7 @@ diversity) → `paper_triage.yaml` (build[]/defer[]/v0/rationale) +
 ## 3. Build a claim spec per built claim (SINGLE SOURCE OF TRUTH)
 
 For each `build[]` claim, write `claims/<claim_id>.yaml` validated against
-`reprogym/schema/claim_spec.schema.json`: statement, anchors, conditions,
+`reproducegym/schema/claim_spec.schema.json`: statement, anchors, conditions,
 matched_variables, params (paper_specified / author_repo_config /
 paper_unspecified, with `local_substitute_allowed` + `affects_strict_reproduction`),
 metrics (formula/direction/window), thresholds (with `exposure`),

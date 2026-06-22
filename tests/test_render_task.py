@@ -8,7 +8,7 @@ import json
 import pytest
 import yaml
 
-from reprogym.pipeline.render_task import (
+from reproducegym.pipeline.render_task import (
     INPUT_MOUNT_DIR,
     derive_contract,
     render_task,
@@ -98,7 +98,7 @@ def test_task_id_is_slugified():
 
 
 def test_render_accepts_yaml_path(tmp_path, valid_claim_spec):
-    from reprogym.claim_spec import dump_claim_spec
+    from reproducegym.claim_spec import dump_claim_spec
 
     spec_path = tmp_path / "spec.yaml"
     dump_claim_spec(valid_claim_spec, spec_path)

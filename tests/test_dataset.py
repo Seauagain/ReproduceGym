@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from reprogym.dataset import DatasetError, build_dataset
-from reprogym.pipeline.render_task import render_task
+from reproducegym.dataset import DatasetError, build_dataset
+from reproducegym.pipeline.render_task import render_task
 
 
 def _task(tmp_path, claim_id, paper_id="demo-1", spec=None, valid=None):

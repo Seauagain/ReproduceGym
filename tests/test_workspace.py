@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from reprogym.pipeline.render_task import render_task
-from reprogym.sandbox.workspace import prepare_workspace
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.sandbox.workspace import prepare_workspace
 
 
 @pytest.fixture

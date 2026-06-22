@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reprogym.sandbox.sandbox import DockerSandbox, LocalSandbox
+from reproducegym.sandbox.sandbox import DockerSandbox, LocalSandbox
 
 
 def test_local_sandbox_runs_and_captures(tmp_path):

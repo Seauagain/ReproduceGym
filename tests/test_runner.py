@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from reprogym.pipeline.render_task import render_task
-from reprogym.sandbox.backends import AgentBackend
-from reprogym.sandbox.launcher import launch
-from reprogym.sandbox.retry import resume
-from reprogym.sandbox.runner import run
-from reprogym.sandbox.sandbox import LocalSandbox, Sandbox, SandboxResult
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.sandbox.backends import AgentBackend
+from reproducegym.sandbox.launcher import launch
+from reproducegym.sandbox.retry import resume
+from reproducegym.sandbox.runner import run
+from reproducegym.sandbox.sandbox import LocalSandbox, Sandbox, SandboxResult
 
 STREAM = "\n".join(
     json.dumps(o)
@@ -112,8 +112,8 @@ def test_metax_inventory_forwarded_into_sandbox_env(tmp_path, task_dir):
         metax_nodes={"verl": {"host": "10.0.0.9", "user": "root"}},
     )
     run(rt)
-    assert "REPROGYM_METAX_NODES" in rec.env
-    forwarded = json.loads(rec.env["REPROGYM_METAX_NODES"])
+    assert "REPRODUCEGYM_METAX_NODES" in rec.env
+    forwarded = json.loads(rec.env["REPRODUCEGYM_METAX_NODES"])
     assert forwarded["verl"]["host"] == "10.0.0.9"
     assert str(rec.cwd) == str(rt.workspace)
     assert rec.argv[0] == "bash"
@@ -134,8 +134,8 @@ def test_launch_installs_compute_access_when_nodes_given(tmp_path, task_dir):
 
 
 def test_launch_no_compute_access_without_nodes(tmp_path, task_dir, monkeypatch):
-    monkeypatch.delenv("REPROGYM_METAX_NODES", raising=False)
-    monkeypatch.setenv("REPROGYM_METAX_CONFIG", str(tmp_path / "absent.yaml"))
+    monkeypatch.delenv("REPRODUCEGYM_METAX_NODES", raising=False)
+    monkeypatch.setenv("REPRODUCEGYM_METAX_CONFIG", str(tmp_path / "absent.yaml"))
     rt = launch(task_dir, tmp_path / "run", backend=FakeBackend(STREAM), sandbox=LocalSandbox())
     assert not (rt.workspace / "metax_ssh.py").exists()
     assert not (rt.workspace / "compute_access.md").exists()

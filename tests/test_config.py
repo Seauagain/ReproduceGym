@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from reprogym.config import load_dotenv, parse_env_text
+from reproducegym.config import load_dotenv, parse_env_text
 
 
 def test_parse_basic_and_quotes_and_comments():

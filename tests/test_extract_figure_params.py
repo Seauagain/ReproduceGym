@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from reprogym.pipeline.extract_figure_params import (
+from reproducegym.pipeline.extract_figure_params import (
     FigureParamError,
     extract_figure_params,
     parse_figure_params_json,
 )
-from reprogym.pipeline.merge_claim_spec import merge_claim_spec
+from reproducegym.pipeline.merge_claim_spec import merge_claim_spec
 
 
 class FakeVL:

@@ -6,11 +6,11 @@ import json
 
 import pytest
 
-from reprogym.compute.providers import LbgProvider, render_lbg_card
-from reprogym.pipeline.render_task import render_task
-from reprogym.sandbox.launcher import launch
-from reprogym.sandbox.runner import run
-from reprogym.sandbox.sandbox import Sandbox, SandboxResult
+from reproducegym.compute.providers import LbgProvider, render_lbg_card
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.sandbox.launcher import launch
+from reproducegym.sandbox.runner import run
+from reproducegym.sandbox.sandbox import Sandbox, SandboxResult
 from tests.test_runner import STREAM, FakeBackend, RecordingSandbox
 
 
@@ -45,7 +45,7 @@ def test_card_encodes_iron_rules_and_run_tag():
 def test_env_injects_run_tag_and_ak(monkeypatch):
     monkeypatch.setenv("BOHRIUM_ACCESS_KEY", "bohr-ak-secret-123456")
     env = LbgProvider(project_id="4449832").env(run_tag="rg-demo-001")
-    assert env["REPROGYM_RUN_TAG"] == "rg-demo-001"
+    assert env["REPRODUCEGYM_RUN_TAG"] == "rg-demo-001"
     assert env["BOHRIUM_ACCESS_KEY"] == "bohr-ak-secret-123456"
     assert env["BOHRIUM_PROJECT_ID"] == "4449832"
 
@@ -99,7 +99,7 @@ def test_runner_forwards_ak_and_run_tag_then_redacts(tmp_path, task_dir, monkeyp
     result = run(rt)
     # AK + run tag reach the sandbox env
     assert rec.env["BOHRIUM_ACCESS_KEY"] == ak
-    assert rec.env["REPROGYM_RUN_TAG"] == rt.run_tag
+    assert rec.env["REPRODUCEGYM_RUN_TAG"] == rt.run_tag
     # ...but the persisted trajectory never contains the AK value
     assert ak not in result.trajectory_path.read_text()
     assert "\u00abREDACTED\u00bb" in result.trajectory_path.read_text()

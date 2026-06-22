@@ -7,10 +7,10 @@ import sys
 
 import pytest
 
-from reprogym.pipeline.render_check import render_check_py, write_check
-from reprogym.pipeline.render_task import render_task
-from reprogym.pipeline.validate_task import validate_task
-from reprogym.verify import score
+from reproducegym.pipeline.render_check import render_check_py, write_check
+from reproducegym.pipeline.render_task import render_task
+from reproducegym.pipeline.validate_task import validate_task
+from reproducegym.verify import score
 
 
 def _write_metrics_csv(ws, *, baseline_len, treatment_len, n=50):
@@ -102,4 +102,4 @@ def test_writes_verification_report(tmp_path, valid_claim_spec):
 
     report = json.loads((ws / "output" / "verification_report.json").read_text())
     assert report["verdict"] == "reproduced"
-    assert report["scored_by"] == "reprogym-recompute"
+    assert report["scored_by"] == "reproducegym-recompute"

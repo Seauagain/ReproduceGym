@@ -19,6 +19,7 @@ from pathlib import Path
 from reproducegym.config import REPO_ROOT
 from reproducegym.dataset import build_dataset
 from reproducegym.orchestrator import _read_paper, build_task, reproduce
+from reproducegym.runlayout import PaperLayout, write_index
 from reproducegym.pipeline.extract_claims import extract_claims
 from reproducegym.pipeline.parse import parse_pdf
 from reproducegym.pipeline.triage import triage, write_resource_profile
@@ -69,9 +70,20 @@ def _cmd_triage(args) -> int:
     client = _make_client()
     paper_text, derived = _read_paper(args.paper)
     claims = extract_claims(paper_text, client=client)
-    out_dir = Path(args.out_dir) if args.out_dir else REPO_ROOT / "runs" / (args.paper_id or derived)
+    paper_id = args.paper_id or derived
+    layout = (
+        PaperLayout(Path(args.out_dir))
+        if args.out_dir
+        else PaperLayout.for_paper(REPO_ROOT / "runs", paper_id)
+    )
+    out_dir = layout.extract_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "claims.json").write_text(
+        json.dumps(claims, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     res = triage(claims, client=client, out_dir=out_dir)
     write_resource_profile(claims, out_dir)
+    write_index(layout, paper_id=paper_id)
     print(f"build:   {res['build']}")
     print(f"v0:      {res['v0']}")
     print(f"out_dir: {out_dir}")

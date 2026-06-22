@@ -30,13 +30,15 @@ class RunResult:
 
 
 def _next_trajectory_path(run_dir: Path) -> Path:
-    base = run_dir / "trajectory.jsonl"
+    traj_dir = run_dir / "trajectory"
+    traj_dir.mkdir(parents=True, exist_ok=True)
+    base = traj_dir / "trajectory.jsonl"
     if not base.exists():
         return base
     n = 1
-    while (run_dir / f"trajectory.{n}.jsonl").exists():
+    while (traj_dir / f"trajectory.{n}.jsonl").exists():
         n += 1
-    return run_dir / f"trajectory.{n}.jsonl"
+    return traj_dir / f"trajectory.{n}.jsonl"
 
 
 def run(

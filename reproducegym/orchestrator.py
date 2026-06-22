@@ -11,6 +11,7 @@ remote GPU nodes. The reward/ verifier is never mounted for the agent.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from reproducegym.pipeline.merge_claim_spec import merge_claim_spec
 from reproducegym.pipeline.render_check import write_baseline_check
 from reproducegym.pipeline.render_task import render_task
 from reproducegym.pipeline.validate_task import validate_task
+from reproducegym.runlayout import PaperLayout, write_index, write_run_record
 from reproducegym.sandbox.launcher import launch
 from reproducegym.sandbox.run_guard import run_guarded
 from reproducegym.sandbox.runner import RunResult
@@ -96,13 +98,24 @@ def build_task(
     claim = _select_claim(claims, claim_id)
     cid = claim["claim_id"]
 
-    # 3. merge into canonical spec (single source of truth)
-    build_root = Path(work_dir) if work_dir is not None else REPO_ROOT / "runs" / paper_id
-    claims_dir = build_root / "claims"
-    task_dir = build_root / "tasks" / cid
-    spec = merge_claim_spec(claim, paper_id=paper_id, out_path=claims_dir / f"{cid}.yaml")
+    # Layout: one numbered, self-describing directory per paper.
+    layout = PaperLayout(Path(work_dir)) if work_dir is not None else PaperLayout.for_paper(
+        REPO_ROOT / "runs", paper_id
+    )
+    task_dir = layout.task_dir(cid)
 
-    # 4. render task (ClawGym-pure) + baseline verifier
+    # 1b. persist extraction inputs/outputs (01-extract) + a paper snapshot.
+    layout.extract_dir.mkdir(parents=True, exist_ok=True)
+    (layout.extract_dir / "claims.json").write_text(
+        json.dumps(claims, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    if not layout.paper_path.exists():
+        layout.paper_path.write_text(paper_text, encoding="utf-8")
+
+    # 3. merge into canonical spec (02-spec; single source of truth)
+    spec = merge_claim_spec(claim, paper_id=paper_id, out_path=layout.spec_path(cid))
+
+    # 4. render task (03-task, ClawGym-pure) + baseline verifier
     render_task(spec, task_dir)
     if baseline_check and not (task_dir / "reward" / "check.py").exists():
         write_baseline_check(spec, task_dir / "reward")
@@ -112,11 +125,14 @@ def build_task(
     if problems:
         raise ReproduceError("task failed validation: " + "; ".join(problems))
 
+    # 5b. refresh the human/agent index.
+    write_index(layout, paper_id=paper_id)
+
     return BuildResult(
         paper_id=paper_id,
         claim_id=cid,
         claim_spec=spec,
-        claim_spec_path=claims_dir / f"{cid}.yaml",
+        claim_spec_path=layout.spec_path(cid),
         task_dir=task_dir,
         validation=problems,
     )
@@ -164,6 +180,28 @@ def reproduce(
 
     # 8. hidden scoring
     reward = score(b.task_dir, runtime.workspace) if do_score else None
+
+    # 8b. record the attempt + refresh the index so the run dir stays self-describing.
+    try:
+        write_run_record(
+            runtime.run_dir,
+            {
+                "claim_id": b.claim_id,
+                "paper_id": b.paper_id,
+                "backend": getattr(runtime.backend, "name", str(backend)),
+                "node": node,
+                "status": "scored" if reward is not None else "ran",
+                "reward": reward,
+                "returncode": rr.returncode,
+                "session_id": rr.session_id,
+                "trajectory_path": str(rr.trajectory_path),
+            },
+        )
+        layout = PaperLayout.from_task_dir(b.task_dir)
+        if layout is not None:
+            write_index(layout, paper_id=b.paper_id)
+    except OSError:
+        pass
 
     return ReproduceResult(
         paper_id=b.paper_id,

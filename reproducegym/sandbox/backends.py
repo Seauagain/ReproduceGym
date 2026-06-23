@@ -63,8 +63,25 @@ class ClaudeCodeBackend(AgentBackend):
         load_dotenv()
         self.binary = binary
         self.model = model or get_env("ANTHROPIC_DEFAULT_OPUS_MODEL")
-        mt = max_turns if max_turns is not None else get_env("CLAUDE_CODE_MAX_TURNS")
-        self.max_turns = int(mt) if mt else None
+        # Precedence: an explicit arg wins; 0 means UNCAPPED (no cap), which is
+        # distinct from None=unset (fall back to the CLAUDE_CODE_MAX_TURNS env
+        # default). A long training run polled turn-by-turn always hits a finite
+        # cap, so callers pass 0 to bound the run by wall-clock instead.
+        if max_turns is None:
+            env_mt = get_env("CLAUDE_CODE_MAX_TURNS")
+            self.max_turns = int(env_mt) if env_mt else None
+        else:
+            self.max_turns = max_turns or None
+
+    def build_env(self, base: Mapping[str, str]) -> dict[str, str]:
+        env = super().build_env(base)
+        # Keep the env var consistent with the resolved cap. When uncapped, strip
+        # it so the claude CLI cannot silently re-cap from a leftover env value.
+        if self.max_turns:
+            env["CLAUDE_CODE_MAX_TURNS"] = str(self.max_turns)
+        else:
+            env.pop("CLAUDE_CODE_MAX_TURNS", None)
+        return env
 
     def build_command(
         self, prompt: str, *, session_id: str | None = None, resume: bool = False

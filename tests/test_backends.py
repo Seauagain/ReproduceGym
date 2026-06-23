@@ -26,6 +26,25 @@ def test_claude_command_fresh_session():
     assert "--resume" not in cmd
 
 
+def test_claude_uncapped_turns_drops_flag_and_env():
+    # max_turns=0 means UNCAPPED: no --max-turns flag, and the env var must be
+    # stripped so the claude CLI can't silently re-cap from a leftover value.
+    be = ClaudeCodeBackend(model="m1", max_turns=0)
+    cmd = be.build_command("go", session_id="s")
+    assert "--max-turns" not in cmd
+    env = be.build_env({"CLAUDE_CODE_MAX_TURNS": "100", "PATH": "/usr/bin"})
+    assert "CLAUDE_CODE_MAX_TURNS" not in env
+    assert env["PATH"] == "/usr/bin"
+
+
+def test_claude_explicit_cap_sets_flag_and_env():
+    be = ClaudeCodeBackend(model="m1", max_turns=7)
+    cmd = be.build_command("go", session_id="s")
+    assert cmd[cmd.index("--max-turns") + 1] == "7"
+    env = be.build_env({"PATH": "/usr/bin"})
+    assert env["CLAUDE_CODE_MAX_TURNS"] == "7"
+
+
 def test_claude_command_resume():
     be = ClaudeCodeBackend(model="m1")
     cmd = be.build_command("continue", session_id="sid-1", resume=True)

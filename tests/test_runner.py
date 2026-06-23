@@ -130,7 +130,10 @@ def test_launch_installs_compute_access_when_nodes_given(tmp_path, task_dir):
     assert (rt.workspace / "metax_nodes.json").is_file()
     assert (rt.workspace / "metax_ssh.py").is_file()
     assert (rt.workspace / "compute_access.md").is_file()
-    assert "Compute access" in (rt.workspace / "task.md").read_text()
+    # task.md references the compute doc rather than inlining it.
+    task_md = (rt.workspace / "task.md").read_text()
+    assert "compute_access.md" in task_md
+    assert "Compute access" in (rt.workspace / "compute_access.md").read_text()
 
 
 def test_launch_no_compute_access_without_nodes(tmp_path, task_dir, monkeypatch):

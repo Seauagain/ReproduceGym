@@ -69,7 +69,10 @@ def test_install_compute_access_writes_files_and_appends_task_md(tmp_path):
 
     task = (ws / "task.md").read_text()
     assert task.startswith("# original task")
-    assert "Compute access" in task and "metax_ssh.py" in task
+    # task.md only *references* the compute doc; the wrapper/recipe is NOT inlined.
+    assert "compute_access.md" in task
+    assert "metax_ssh.py" not in task
+    assert "metax_ssh.py" in doc.read_text()
 
 
 def test_install_compute_access_no_task_md_is_ok(tmp_path):

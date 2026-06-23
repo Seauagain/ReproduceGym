@@ -147,14 +147,26 @@ def render_compute_access(
     notes: str = "",
     remote_workdir: str = "",
 ) -> str:
-    """Markdown the in-sandbox agent can act on to reach MetaX GPU nodes."""
-    lines = ["## Compute access (MetaX / verl GPU nodes)", ""]
-    lines.append(
-        "This claim may require GPU training. You have ssh access to the remote nodes "
-        "below. Run remote commands through the provided wrapper (it reads "
-        "`metax_nodes.json`):"
-    )
-    lines += ["", "    python3 metax_ssh.py <alias> \"<remote command>\"", ""]
+    """Markdown the in-sandbox agent can act on to reach compute.
+
+    Compute choice is intentionally NOT baked into the task itself: this doc is
+    written as a standalone file and only *referenced* from task.md, so the task
+    statement stays about the science and the agent decides where to run.
+    """
+    lines = ["# Compute access", ""]
+    lines.append("You choose where to run this task:")
+    lines += [
+        "",
+        "- **Local** — run directly in this sandbox. Fine for light / CPU-only work, "
+        "analysis, or small experiments.",
+        "- **Remote GPU (MetaX / verl)** — ssh to the nodes below for GPU training. "
+        "Choose this when the claim needs training or a GPU.",
+        "",
+        "Reach the remote nodes through the provided wrapper (it reads `metax_nodes.json`):",
+        "",
+        "    python3 metax_ssh.py <alias> \"<remote command>\"",
+        "",
+    ]
     lines.append("Available nodes:")
     for alias, n in nodes.items():
         wd = f" (workdir: {n.workdir})" if n.workdir else ""
@@ -204,8 +216,17 @@ def install_compute_access(
     doc.write_text(md, encoding="utf-8")
     written.append(doc)
 
+    # Reference the compute doc from task.md instead of inlining it: the task stays
+    # about the claim; *how/where* to run is a separate, swappable concern.
     task_md = workspace / task_md_name
     if task_md.is_file():
-        task_md.write_text(task_md.read_text(encoding="utf-8") + "\n\n" + md, encoding="utf-8")
+        ref = (
+            "\n\n## Compute\n\n"
+            "Where you run this task is your choice — run **locally** in this sandbox, "
+            "or use the **remote MetaX / verl GPU nodes** for training. Node aliases, the "
+            f"ssh wrapper, env setup and the launch recipe are in [`{doc.name}`](./{doc.name}); "
+            "read it before doing any heavy compute.\n"
+        )
+        task_md.write_text(task_md.read_text(encoding="utf-8") + ref, encoding="utf-8")
 
     return written

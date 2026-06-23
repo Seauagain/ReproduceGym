@@ -10,7 +10,7 @@ one hand-authored file (`reward/check.py`), one consistency gate.**
 ## 0. Pipeline & paper-level layout
 
 ```
-parse (MinerU) → extract_claims (Claude) + extract_figure_params (Qwen-VL)
+parse (MinerU) → extract_claims (Claude) + extract_figure_params (multimodal)
   → triage (Claude) → merge_claim_spec → render_task → build-task skill → validate_task
 ```
 

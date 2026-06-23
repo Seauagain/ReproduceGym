@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from reproducegym.config import load_dotenv, parse_env_text
+from reproducegym.config import dotenv_values, load_dotenv, parse_env_text
 
 
 def test_parse_basic_and_quotes_and_comments():
@@ -26,6 +26,20 @@ def test_parse_resolves_var_references():
     text = "MINERU_TOKEN=tok123\nMINERU_API_KEY=${MINERU_TOKEN}\n"
     parsed = parse_env_text(text)
     assert parsed["MINERU_API_KEY"] == "tok123"
+
+
+def test_parse_does_not_resolve_from_process_env(monkeypatch):
+    monkeypatch.setenv("SECRET_FROM_SHELL", "must-not-leak")
+    parsed = parse_env_text("ANTHROPIC_API_KEY=${SECRET_FROM_SHELL}\n")
+    assert parsed["ANTHROPIC_API_KEY"] == ""
+
+
+def test_dotenv_values_does_not_mutate_or_read_process_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "stale-shell")
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=from-file\n", encoding="utf-8")
+    assert dotenv_values(env)["ANTHROPIC_API_KEY"] == "from-file"
+    assert os.environ["ANTHROPIC_API_KEY"] == "stale-shell"
 
 
 def test_load_dotenv_missing_file_returns_empty(tmp_path):

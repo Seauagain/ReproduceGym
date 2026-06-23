@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from reproducegym.config import get_env, load_dotenv
+from reproducegym.config import dotenv_values
 from reproducegym.trajectory import Trajectory
 
 
@@ -29,12 +29,14 @@ class AgentBackend:
 
     def build_env(self, base: Mapping[str, str]) -> dict[str, str]:
         """Copy base env and ensure the backend's keys (from .env) are present."""
-        load_dotenv()
+        file_env = dotenv_values()
         env = dict(base)
         for key in self.env_keys:
-            value = get_env(key)
-            if value and not env.get(key):
+            value = file_env.get(key)
+            if value:
                 env[key] = value
+            else:
+                env.pop(key, None)
         return env
 
     def parse(self, stdout: str, *, meta: dict[str, Any] | None = None) -> Trajectory:
@@ -60,15 +62,15 @@ class ClaudeCodeBackend(AgentBackend):
         model: str | None = None,
         max_turns: int | None = None,
     ):
-        load_dotenv()
+        env = dotenv_values()
         self.binary = binary
-        self.model = model or get_env("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        self.model = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
         # Precedence: an explicit arg wins; 0 means UNCAPPED (no cap), which is
         # distinct from None=unset (fall back to the CLAUDE_CODE_MAX_TURNS env
         # default). A long training run polled turn-by-turn always hits a finite
         # cap, so callers pass 0 to bound the run by wall-clock instead.
         if max_turns is None:
-            env_mt = get_env("CLAUDE_CODE_MAX_TURNS")
+            env_mt = env.get("CLAUDE_CODE_MAX_TURNS")
             self.max_turns = int(env_mt) if env_mt else None
         else:
             self.max_turns = max_turns or None

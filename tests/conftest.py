@@ -21,6 +21,11 @@ def valid_claim_spec() -> dict:
     return copy.deepcopy(
         {
             "claim_id": "c1_demo",
+            "claim_num": 1,
+            "claim_slug": "demo",
+            "display_title": "Demo claim",
+            "importance_rank": 1,
+            "spec_hash": "deadbeef1234",
             "paper_id": "demo-0001",
             "claim_type": "mechanism",
             "requires_training": True,

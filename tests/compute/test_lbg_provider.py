@@ -11,7 +11,7 @@ from reproducegym.pipeline.render_task import render_task
 from reproducegym.sandbox.launcher import launch
 from reproducegym.sandbox.runner import run
 from reproducegym.sandbox.sandbox import Sandbox, SandboxResult
-from tests.test_runner import STREAM, FakeBackend, RecordingSandbox
+from tests.helpers import STREAM, FakeBackend, RecordingSandbox
 
 
 def test_from_spec_parses_params():

@@ -27,6 +27,8 @@ def test_merge_produces_valid_spec():
     validate_claim_spec(spec)  # must not raise
     assert spec["paper_id"] == "demo-1"
     assert spec["tier"] and spec["exposure_policy"]
+    assert spec["spec_hash"]
+    assert spec["claim_num"] == 1
     assert "required_experiments" not in spec and "notes" not in spec
 
 
@@ -56,6 +58,53 @@ def test_merge_folds_figure_params():
     )
     names = {p["name"] for p in spec["params"]}
     assert "group_size" in names and "lr" in names
+
+
+def test_merge_binds_only_claim_anchored_figure_evidence():
+    claim = dict(CLAIM, anchors=[{"kind": "figure", "ref": "Fig. 5"}])
+    evidence = [
+        {
+            "figure_ref": "Fig. 5",
+            "image_file": "fig5.png",
+            "params": [{"name": "steps", "value": 150, "visibility": "visible"}],
+        },
+        {
+            "figure_ref": "Fig. 6",
+            "image_file": "fig6.png",
+            "params": [{"name": "wrong", "value": 1}],
+        },
+    ]
+    spec = merge_claim_spec(claim, figure_evidence=evidence, paper_id="p")
+    names = {p["name"] for p in spec["params"]}
+    assert "steps" in names
+    assert "wrong" not in names
+    assert spec["figure_dependencies"][0]["image_file"] == "fig5.png"
+    assert "input_files" not in spec
+
+
+def test_task_affecting_param_changes_spec_hash():
+    a = merge_claim_spec(CLAIM, paper_id="p")
+    changed = dict(CLAIM)
+    changed["params"] = [{"name": "lr", "value": 2e-6, "source": "Sec 3", "status": "paper_specified"}]
+    b = merge_claim_spec(changed, paper_id="p")
+    assert a["spec_hash"] != b["spec_hash"]
+
+
+def test_volatile_figure_metadata_does_not_change_spec_hash():
+    # The multimodal reader emits non-deterministic confidence / read_from; rebuilding
+    # the same paper must yield the same task-version hash, not a fresh orphaned dir.
+    claim = dict(CLAIM, anchors=[{"kind": "figure", "ref": "Fig. 5"}])
+    base_fig = {"figure_ref": "Fig. 5", "image_file": "fig5.png",
+                "params": [{"name": "steps", "value": 150, "visibility": "visible"}]}
+    a = merge_claim_spec(claim, figure_evidence=[dict(base_fig, confidence=0.91)], paper_id="p")
+    noisy = dict(
+        base_fig,
+        confidence=0.42,
+        params=[{"name": "steps", "value": 150, "visibility": "visible",
+                 "confidence": 0.42, "read_from": "x-axis reads ~150 (visual)"}],
+    )
+    b = merge_claim_spec(claim, figure_evidence=[noisy], paper_id="p")
+    assert a["spec_hash"] == b["spec_hash"]
 
 
 def test_merge_overrides_and_out_path(tmp_path):

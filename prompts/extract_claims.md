@@ -11,7 +11,10 @@ appendix, experimental setup — not just the abstract's headline.
 
 ## For each claim, extract
 
-- `claim_id` — stable, `[a-z0-9_]+`, unique within the paper
+- `claim_id` — provisional short slug only; downstream code rewrites it to
+  `c001_short_slug`
+- `importance_rank` — integer, 1 = most important / best first task
+- `display_title` — short human-readable title for reports and manifests
 - `statement` — claim verbatim or a faithful paraphrase, one falsifiable sentence
 - `anchors[]` — `{kind: section|figure|table|equation|appendix, ref, note}`
 - `claim_type` — `eval_only | mechanism | ablation | scaling | headline | diagnostic`
@@ -23,7 +26,7 @@ appendix, experimental setup — not just the abstract's headline.
 - `verifiability` — `high | medium | low` (can a program recompute the metric?)
 - `params[]` (text-stated only) — `{name, value, unit, source, status}` where
   `status ∈ paper_specified | author_repo_config | paper_unspecified`; leave
-  figure-only numbers for the Qwen-VL figure pass
+  figure-only numbers for the multimodal figure pass
 - `notes` — missing params, missing data, risks
 
 ## Output
@@ -36,3 +39,7 @@ Strict JSON, a list of claim objects. No prose outside JSON.
   expensive headline result.
 - Never invent numbers. If the paper doesn't state it, mark `paper_unspecified`.
 - Favour claims where a metric can be recomputed from agent-produced logs.
+- If a claim depends on a figure, include a `figure` anchor with the exact ref
+  from the figure inventory. Do not rely only on section text.
+- Use the figure inventory to notice figure-only experimental requirements, but
+  leave exact numeric reads from images to the multimodal figure pass.

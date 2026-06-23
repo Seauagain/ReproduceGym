@@ -10,18 +10,63 @@ Turns an RL paper into sandbox reproduction tasks, runs an in-sandbox agent agai
 them on GPU nodes, captures the trajectory, and scores it. Host holds main control +
 secrets; GPU nodes are reached only by the in-sandbox agent over plain ssh.
 
-## Single entrypoint: `run.py`
+## Three stages: parse -> build -> run
+
+The pipeline is split into three explicit stages, each a thin entrypoint writing
+into `runs/<paper_id>/`.
+
+### Stage 0 - parse: `parse_paper.py`
+
+Source (arXiv id/URL, PDF URL, local PDF, or local md) -> `00-parse/{paper.md,
+figures/, figures.index.json}` via the MinerU cloud open API. This is what makes
+the figures the build's multimodal step needs actually present locally (the old
+flow silently skipped multimodal when md image refs pointed at missing files).
 
 ```bash
-python run.py --claim_id <id> --server <node-alias>          # reproduce a built claim
-python run.py --claim_id <id> --server <node> --paper p.md   # build from paper first
-python run.py --claim_id <id> --server <node> --probe-only   # resolve + estimate + check node
+python parse_paper.py --url 2503.20783                 # arXiv id / abs / pdf link, or any PDF URL
+python parse_paper.py --pdf paper/dr-grpo.pdf --paper-id dr-grpo
+python parse_paper.py --md  paper/dr-grpo.md  --paper-id dr-grpo
 ```
 
-It: forces `.env` creds → resolves/builds the task → estimates runtime → starts an
+MinerU creds come from `.env` (`MINERU_TOKEN` / `MINERU_API_KEY`); it is a cloud
+service, not self-hosted.
+
+### Stage 1 - build: `build_claim_tasks.py`
+
+Consumes the parse bundle (reuses `00-parse/figures.index.json`), optionally runs
+a multimodal vision model with captions/context, extracts/ranks claims, and writes
+hash-versioned tasks. No sandbox/GPU.
+
+```bash
+python build_claim_tasks.py --paper runs/dr-grpo --out runs --parse-images auto
+```
+
+`--paper` accepts a parse bundle dir (`runs/<id>` or its `00-parse/`) or a raw
+`paper.md` (figures from a sibling `figures/`). `--parse-images auto` runs image
+parsing only when figures exist and `MULTIMODAL_*` / `VISION_*` / legacy `QWEN_*`
+are configured; `always` fails if multimodal is unavailable; `never` is text-only.
+In `auto`, if a paper has image refs but none resolve locally, build warns (run
+parse first).
+
+Outputs:
+`runs/<paper>/01-extract/{figures.index.json,figure_evidence.yaml,claims.json}`,
+`02-spec/<claim>.<hash>.yaml`, and `03-task/<claim>/<hash>/`.
+
+## Run entrypoint: `run.py`
+
+```bash
+python run.py --claim_id <id> --spec-hash <hash> --server <node-alias>
+python run.py --task-dir runs/<paper>/03-task/<claim>/<hash> --server <node-alias>
+python run.py --claim_id <id> --spec-hash <hash> --server <node> --probe-only
+```
+
+It: forces `.env` creds → resolves the built task → estimates runtime → starts an
 API-capture proxy → launches the in-sandbox `claude -p` agent on the node → writes
-the trajectory. Flags are documented in `README.md` (`## Run a reproduction`). Output:
-`runs/<paper>/04-run/<claim>/NNN/{workspace,trajectory}/`.
+the trajectory. Flags are documented in `README.md` (`### Stage 2 - run`). Output:
+`runs/<paper>/04-run/<claim>/<hash>/NNN/{workspace,trajectory}/`.
+
+Do not pass a paper to `run.py`; the run stage never builds or mutates task
+definitions.
 
 Run tests with: `python3 -m pytest -q` (pure-python; no GPU/network needed).
 
@@ -66,16 +111,13 @@ directly, do the same.
   is instructed to `setsid nohup` the training and poll sparsely (interval from the
   estimate) + write `output/` + `touch DONE`. Keep it that way.
 
-## Building more claims — pipeline is flaky, know this
+## Building more claims — do not re-extract per run
 
-`orchestrator.build_task` **re-extracts claims on every call and the claim_ids are
-non-deterministic** (a later extraction yields different ids than `claims.json`), and
-`merge_claim_spec` sometimes emits an invalid `direction` (e.g. `context_dependent`).
-So building N specific claims by their old ids fails intermittently. To add claims
-reliably: extract **once**, persist, then build each from the saved extraction (and
-retry/repair invalid spec fields). The build env also lacks the `anthropic` package —
-pass a custom `client` with a `.complete(prompt)->str` method (stdlib `urllib` against
-`<base>/v1/messages` with `x-api-key`) instead of installing it.
+Use `build_claim_tasks.py` once per paper, then fan out `run.py` over the built
+`claim_id` + `spec_hash` pairs. New claim IDs are deterministic (`c001_slug`,
+`c002_slug`, ordered by importance) and task-affecting changes create a new
+`spec_hash`. If `run.py` says a claim has multiple versions, pass `--spec-hash`;
+do not guess from a stale slug.
 
 ## Cleanup — leave nodes clean
 
@@ -94,5 +136,5 @@ config/metax_nodes.yaml  node inventory + injected verl/MACA notes (gitignored)
 reproducegym/          host control: cli, orchestrator, models, estimate, metax,
                        runlayout, pipeline/, sandbox/, compute/, schema/
 agent_trace/           API-level trajectory capture (proxy + builders + raw/SFT)
-runs/<paper>/          01-extract/ 02-spec/ 03-task/<claim>/ 04-run/<claim>/NNN/  (gitignored)
+runs/<paper>/          01-extract/ 02-spec/ 03-task/<claim>/<hash>/ 04-run/<claim>/<hash>/NNN/  (gitignored)
 ```

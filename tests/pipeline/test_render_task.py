@@ -42,6 +42,7 @@ def test_data_entry_contract(rendered):
     assert de["task_id"] == task_id_for(spec)
     assert de["input_mount_dir"] == INPUT_MOUNT_DIR
     assert de["metadata"]["claim_id"] == "c1_demo"
+    assert de["metadata"]["spec_hash"] == "deadbeef1234"
     assert de["metadata"]["paper_id"] == "demo-0001"
     assert de["metadata"]["private_targets_hidden"] is True  # threshold is hidden
 
@@ -81,6 +82,7 @@ def test_params_grouped_by_status(rendered):
     task_dir, _ = rendered
     params = yaml.safe_load((task_dir / "input_files" / "params.yaml").read_text())
     assert params["claim_id"] == "c1_demo"
+    assert params["spec_hash"] == "deadbeef1234"
     assert params["paper_specified"]["learning_rate"]["value"] == 1e-6
 
 
@@ -90,6 +92,7 @@ def test_protocol_metrics_match_spec(rendered):
     c = derive_contract(spec)
     assert set(proto["metric_computation"].keys()) == set(c["metric_names"])
     assert proto["workspace_contract"]["agent_must_write"] == c["required_files"]
+    assert proto["spec_hash"] == "deadbeef1234"
 
 
 def test_task_id_is_slugified():

@@ -79,6 +79,12 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
             add(f"data_entry.json is not valid JSON: {e}")
         if "metadata" not in data_entry:
             add("data_entry.json missing required 'metadata'")
+        else:
+            meta = data_entry.get("metadata") or {}
+            if meta.get("claim_id") != spec["claim_id"]:
+                add("data_entry.json metadata claim_id mismatch")
+            if meta.get("spec_hash") != spec["spec_hash"]:
+                add("data_entry.json metadata spec_hash mismatch")
     if not input_dir.is_dir():
         add("input_files/ missing")
     if not (reward_dir / "reward.sh").is_file():
@@ -108,6 +114,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
                     )
         if set(exp.get("allowed_verdicts", [])) != set(c["verdicts"]):
             add("expected.json allowed_verdicts disagree with verdict set")
+        if exp.get("claim_id") != spec["claim_id"]:
+            add("expected.json claim_id mismatch")
+        if exp.get("spec_hash") != spec["spec_hash"]:
+            add("expected.json spec_hash mismatch")
 
     # --- protocol.yaml ---------------------------------------------------- #
     proto_path = input_dir / "protocol.yaml"
@@ -124,6 +134,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         bad_verdicts = set((proto.get("verdict_rules") or {}).keys()) - set(c["verdicts"])
         if bad_verdicts:
             add(f"protocol verdict_rules has unknown verdicts: {sorted(bad_verdicts)}")
+        if proto.get("claim_id") != spec["claim_id"]:
+            add("protocol claim_id mismatch")
+        if proto.get("spec_hash") != spec["spec_hash"]:
+            add("protocol spec_hash mismatch")
 
     # --- params.yaml ------------------------------------------------------ #
     params_path = input_dir / "params.yaml"
@@ -133,6 +147,8 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         params = yaml.safe_load(params_path.read_text(encoding="utf-8")) or {}
         if params.get("claim_id") != spec["claim_id"]:
             add("params.yaml claim_id mismatch")
+        if params.get("spec_hash") != spec["spec_hash"]:
+            add("params.yaml spec_hash mismatch")
 
     # --- task.md presence checks ----------------------------------------- #
     task_md_path = input_dir / "task.md"
@@ -156,6 +172,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         tgt = {k: v.get("pass_threshold") for k, v in (targets.get("primary_thresholds") or {}).items()}
         if tgt != c["thresholds"]:
             add(f"reward/targets.yaml thresholds {tgt} != spec {c['thresholds']}")
+        if targets.get("claim_id") != spec["claim_id"]:
+            add("reward/targets.yaml claim_id mismatch")
+        if targets.get("spec_hash") != spec["spec_hash"]:
+            add("reward/targets.yaml spec_hash mismatch")
 
     # --- exposure: no hidden threshold value may appear in input_files/ --- #
     if input_dir.is_dir():

@@ -7,63 +7,11 @@ import json
 import pytest
 
 from reproducegym.pipeline.render_task import render_task
-from reproducegym.sandbox.backends import AgentBackend
 from reproducegym.sandbox.launcher import launch
 from reproducegym.sandbox.retry import resume
 from reproducegym.sandbox.runner import run
-from reproducegym.sandbox.sandbox import LocalSandbox, Sandbox, SandboxResult
-
-STREAM = "\n".join(
-    json.dumps(o)
-    for o in [
-        {"type": "system", "subtype": "init", "session_id": "sess-fake", "model": "m"},
-        {
-            "type": "assistant",
-            "session_id": "sess-fake",
-            "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]},
-        },
-        {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": "done",
-            "session_id": "sess-fake",
-        },
-    ]
-)
-
-
-class FakeBackend(AgentBackend):
-    name = "fake"
-
-    def __init__(self, stream: str):
-        self.stream = stream
-        self.calls: list[dict] = []
-
-    def build_command(self, prompt, *, session_id=None, resume=False):
-        self.calls.append({"prompt": prompt, "session_id": session_id, "resume": resume})
-        script = "cat <<'REPRO_STREAM_EOF'\n" + self.stream + "\nREPRO_STREAM_EOF\n"
-        return ["bash", "-c", script]
-
-    def build_env(self, base):
-        return dict(base)
-
-
-class RecordingSandbox(Sandbox):
-    name = "recording"
-
-    def __init__(self, stdout: str, returncode: int = 0):
-        self.stdout = stdout
-        self.returncode = returncode
-        self.argv = None
-        self.cwd = None
-        self.env = None
-
-    def run(self, argv, *, cwd, env=None, timeout=None):
-        self.argv = list(argv)
-        self.cwd = cwd
-        self.env = dict(env or {})
-        return SandboxResult(self.returncode, self.stdout, "")
+from reproducegym.sandbox.sandbox import LocalSandbox
+from tests.helpers import STREAM, FakeBackend, RecordingSandbox
 
 
 @pytest.fixture

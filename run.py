@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""run.py - thin entrypoint: reproduce one already-built claim on a chosen server.
+"""run.py - run-stage entrypoint: execute one already-rendered task.
 
-    python run.py --claim_id dr_grpo_len --server verl-grpo-44487
+    python run.py --claim_id c001_len --spec-hash <hash> --server verl-grpo-44487
+    python run.py --task-dir runs/paper/03-task/c001_len/<hash> --server verl-grpo-44487
 
 Phases: resolve task -> probe server -> launch sandbox (in-sandbox Claude Code
 reproduction agent ssh's to the MetaX node and runs the experiment there) ->
@@ -26,7 +27,7 @@ sys.path.insert(0, str(REPO))
 from reproducegym.compute.sources import load_inventory
 from reproducegym.config import parse_env_text
 from reproducegym.estimate import RuntimeEstimate, estimate_runtime
-from reproducegym.runlayout import PaperLayout
+from reproducegym.runlayout import PaperLayout, write_run_record
 from reproducegym.sandbox.backends import ClaudeCodeBackend
 from reproducegym.sandbox.launcher import launch
 from reproducegym.sandbox.runner import run
@@ -47,16 +48,84 @@ def force_env_provider() -> None:
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 
-def resolve_task(claim_id: str) -> Path | None:
-    for task in sorted((REPO / "runs").glob("*/03-task/*")):
-        if not (task / "data_entry.json").is_file():
+def _candidate_tasks() -> list[Path]:
+    tasks: list[Path] = []
+    for claim_dir in sorted((REPO / "runs").glob("*/03-task/*")):
+        if (claim_dir / "data_entry.json").is_file():
+            tasks.append(claim_dir)
             continue
-        if task.name == claim_id:
-            return task
-        proto = task / "input_files" / "protocol.yaml"
-        if proto.is_file() and f"claim_id: {claim_id}" in proto.read_text(encoding="utf-8"):
-            return task
-    return None
+        if claim_dir.is_dir():
+            for hash_dir in sorted(p for p in claim_dir.iterdir() if p.is_dir()):
+                if (hash_dir / "data_entry.json").is_file():
+                    tasks.append(hash_dir)
+    return tasks
+
+
+def _task_metadata(task: Path) -> dict:
+    try:
+        return json.loads((task / "data_entry.json").read_text(encoding="utf-8")).get("metadata", {})
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _claim_id_for_task(task: Path, meta: dict | None = None) -> str:
+    meta = meta or _task_metadata(task)
+    if meta.get("claim_id"):
+        return str(meta["claim_id"])
+    if task.parent.parent.name == "03-task":
+        return task.parent.name
+    return task.name
+
+
+def resolve_task(claim_id: str, spec_hash: str | None = None) -> Path | None:
+    matches: list[Path] = []
+    for task in _candidate_tasks():
+        meta = _task_metadata(task)
+        task_claim = _claim_id_for_task(task, meta)
+        if task_claim != claim_id and task.name != claim_id and task.parent.name != claim_id:
+            continue
+        if spec_hash and meta.get("spec_hash") != spec_hash and task.name != spec_hash:
+            continue
+        matches.append(task)
+    if not matches:
+        return None
+    if spec_hash:
+        return matches[0]
+    hashes = {(_task_metadata(t).get("spec_hash") or "") for t in matches}
+    if len(matches) > 1 and len(hashes) > 1:
+        choices = [
+            f"{_task_metadata(t).get('claim_id', t.parent.name)}@{_task_metadata(t).get('spec_hash', t.name)}"
+            for t in matches
+        ]
+        raise SystemExit(
+            f"[resolve] claim {claim_id!r} has multiple task versions: {choices}; pass --spec-hash"
+        )
+    return matches[0]
+
+
+def resolve_existing_task(
+    *,
+    task_dir: str | None,
+    claim_id: str | None,
+    spec_hash: str | None,
+) -> Path:
+    if task_dir:
+        task = Path(task_dir)
+        if not (task / "data_entry.json").is_file():
+            raise SystemExit(f"[resolve] not a rendered task dir (missing data_entry.json): {task}")
+        meta = _task_metadata(task)
+        if claim_id and _claim_id_for_task(task, meta) != claim_id:
+            raise SystemExit(f"[resolve] task claim_id {_claim_id_for_task(task, meta)!r} != {claim_id!r}")
+        if spec_hash and meta.get("spec_hash") != spec_hash and task.name != spec_hash:
+            raise SystemExit(f"[resolve] task spec_hash {meta.get('spec_hash')!r} != {spec_hash!r}")
+        return task
+    if not claim_id:
+        raise SystemExit("[resolve] pass --task-dir, or --claim_id with optional --spec-hash")
+    task = resolve_task(claim_id, spec_hash)
+    if task is None:
+        hint = " Run build_claim_tasks.py first." if spec_hash is None else " Check --spec-hash or rebuild the task."
+        raise SystemExit(f"[resolve] built task not found for claim {claim_id!r}.{hint}")
+    return task
 
 
 def probe_server(server: str, compute: str) -> None:
@@ -88,12 +157,17 @@ def _inject_runtime_hint(workspace: Path, est: RuntimeEstimate, timeout: float) 
 
 
 def resolve_run_dir(task: Path, out_fallback: str) -> Path:
-    """Standard layout: runs/<paper>/04-run/<claim>/NNN. Falls back to --out only
+    """Standard layout: runs/<paper>/04-run/<claim>/<hash>/NNN. Falls back to --out only
     if the task isn't part of a paper layout."""
     layout = PaperLayout.from_task_dir(task)
+    meta = _task_metadata(task)
+    claim_id = _claim_id_for_task(task, meta)
+    spec_hash = meta.get("spec_hash")
     if layout is not None:
-        return layout.next_run_dir(task.name)
-    base = Path(out_fallback) / task.name
+        return layout.next_run_dir(claim_id, spec_hash)
+    base = Path(out_fallback) / claim_id
+    if spec_hash:
+        base = base / spec_hash
     base.mkdir(parents=True, exist_ok=True)
     n = max([int(p.name) for p in base.iterdir() if p.is_dir() and p.name.isdigit()] or [0]) + 1
     return base / f"{n:03d}"
@@ -101,9 +175,11 @@ def resolve_run_dir(task: Path, out_fallback: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Reproduce one claim on a chosen server.")
-    ap.add_argument("--claim_id", required=True)
+    ap.add_argument("--task-dir", help="rendered task dir: runs/<paper>/03-task/<claim>/<hash>")
+    ap.add_argument("--claim_id")
+    ap.add_argument("--spec-hash", help="exact task/spec version; required when a claim has multiple hashes")
     ap.add_argument("--server", required=True, help="node alias from servers.md")
-    ap.add_argument("--paper", help="paper .md to build the claim from if not yet rendered")
+    ap.add_argument("--paper", help=argparse.SUPPRESS)
     ap.add_argument("--out", default=str(REPO / "runs"), help="fallback output root (used only if task is not in a paper layout)")
     ap.add_argument("--compute", default=str(REPO / "config" / "metax_nodes.yaml"),
                     help="compute inventory spec: a path (.yaml/.json/.md) or scheme:rest (servers-md:..., lbg:...)")
@@ -122,16 +198,16 @@ def main(argv: list[str] | None = None) -> int:
 
     force_env_provider()
 
-    task = resolve_task(args.claim_id)
-    if task is None:
-        if not args.paper:
-            raise SystemExit(f"[resolve] claim {args.claim_id!r} not built; pass --paper to build it")
-        from reproducegym.orchestrator import build_task
-        print(f"[build] extracting + rendering from {args.paper} ...", flush=True)
-        task = build_task(args.paper, args.claim_id).task_dir
+    if args.paper:
+        raise SystemExit(
+            "[resolve] run.py no longer builds from paper. "
+            "First run build_claim_tasks.py, then run by --task-dir or --claim_id/--spec-hash."
+        )
+    task = resolve_existing_task(task_dir=args.task_dir, claim_id=args.claim_id, spec_hash=args.spec_hash)
     print(f"[resolve] task={task}", flush=True)
 
     meta = json.loads((task / "data_entry.json").read_text(encoding="utf-8")).get("metadata", {})
+    spec_hash = meta.get("spec_hash")
     est = estimate_runtime(requires_training=bool(meta.get("requires_training")), cost=meta.get("cost"))
     timeout = args.timeout if args.timeout and args.timeout > 0 else est.timeout_s
     print(f"[estimate] {est.label}  -> timeout={timeout / 3600:.1f}h", flush=True)
@@ -147,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         run_dir = resolve_run_dir(task, args.out)
     caps = run_dir / "trajectory" / "captures"
-    session = args.claim_id
+    session = meta.get("claim_id") or args.claim_id or task.name
 
     capture = not args.no_capture
     if capture:
@@ -183,6 +259,31 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[capture] completions={len(sess.completions)} traces={len(traj.traces)}", flush=True)
         else:
             print("[capture] WARNING: 0 completions captured", flush=True)
+
+    write_run_record(
+        run_dir,
+        {
+            "claim_id": meta.get("claim_id", args.claim_id),
+            "spec_hash": spec_hash,
+            "backend": backend.name,
+            "node": args.server,
+            "status": "ran",
+            "returncode": res.returncode,
+            "session_id": res.session_id,
+            "trajectory_path": str(res.trajectory_path),
+        },
+    )
+    traj_meta = run_dir / "trajectory" / "metadata.json"
+    traj_meta.parent.mkdir(parents=True, exist_ok=True)
+    traj_meta.write_text(
+        json.dumps(
+            {"claim_id": meta.get("claim_id", args.claim_id), "spec_hash": spec_hash, "run_dir": str(run_dir)},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     print(f"[done] run_dir={run_dir}", flush=True)
     return 0

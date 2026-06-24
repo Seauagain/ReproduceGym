@@ -105,6 +105,7 @@
         "required": ["label", "description"],
         "properties": {
           "label": {"type": "string", "description": "Output label, e.g. 'grpo' / 'drgrpo'."},
+          "source_label": {"type": "string", "description": "Original paper/LLM condition label before verifier-safe normalization."},
           "description": {"type": "string"},
           "switches": {"type": "object", "description": "Free-form knobs that differ in this condition."}
         }
@@ -182,9 +183,26 @@
         "required": ["name", "formula", "direction"],
         "properties": {
           "name": {"type": "string"},
+          "source_name": {"type": "string", "description": "Original metric name before verifier-safe normalization."},
           "formula": {"type": "string", "description": "Recompute rule over metrics.csv, e.g. 'mean(grpo.grad_norm) / mean(drgrpo.grad_norm)'."},
           "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
           "window": {"type": "string", "description": "e.g. 'last_50_steps' with fallback rule."}
+        }
+      }
+    },
+    "diagnostic_metrics": {
+      "type": "array",
+      "description": "Metrics extracted from the claim but excluded from RLVR reward because no paper-grounded target was bound. They are retained for audit/protocol context only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "formula", "direction"],
+        "properties": {
+          "name": {"type": "string"},
+          "source_name": {"type": "string", "description": "Original metric name before verifier-safe normalization."},
+          "formula": {"type": "string"},
+          "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
+          "window": {"type": "string"}
         }
       }
     },
@@ -305,6 +323,7 @@
         },
         "pool": {"type": "string", "enum": ["rlvr", "exploration"]},
         "targets_bound": {"type": "array", "items": {"type": "string"}},
+        "diagnostic_reason": {"type": "string"},
         "reason": {"type": "string"}
       }
     },

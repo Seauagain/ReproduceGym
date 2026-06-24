@@ -65,6 +65,8 @@ def valid_claim_spec() -> dict:
                 {
                     "metric": "length_ratio",
                     "pass_threshold": 0.8,
+                    "target_value": 0.7,
+                    "tolerance_abs": 0.1,
                     "exposure": "hidden",
                     "source": "Fig. 4",
                     "target_evidence": {
@@ -73,8 +75,22 @@ def valid_claim_spec() -> dict:
                         "read_from": "length-vs-step curves",
                         "confidence": 0.9,
                     },
+                    "rationale": "Fig. 4 reports the target length ratio.",
                 },
             ],
+            "reward_curves": {
+                "length_ratio": {
+                    "metric": "length_ratio",
+                    "direction": "lower_is_better",
+                    "points": [
+                        {"value": 0.9, "reward": 0.0},
+                        {"value": 0.8, "reward": 0.5},
+                        {"value": 0.7, "reward": 1.0},
+                    ],
+                    "source": {"source": "Fig. 4"},
+                    "rationale": "target curve derived from Fig. 4",
+                }
+            },
             "required_outputs": {
                 "files": ["output/result.json", "output/metrics.csv"],
                 "metrics_csv_columns": ["condition", "step", "len"],

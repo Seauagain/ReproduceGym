@@ -36,8 +36,8 @@ def test_hidden_target_param_becomes_threshold(valid_claim_spec):
 
 def test_directional_metric_gets_neutral_threshold(valid_claim_spec):
     # length_ratio = mean(treatment.len) / mean(baseline.len) compares two
-    # conditions, so even without an absolute paper number it is scorable: the
-    # no-effect point is a ratio of 1.0.
+    # conditions, so we still expose a diagnostic no-effect point of 1.0. Without
+    # an absolute paper target it is not a strong RLVR task.
     spec = copy.deepcopy(valid_claim_spec)
     spec["thresholds"] = []
     spec["verdict_rules"] = {}
@@ -45,12 +45,10 @@ def test_directional_metric_gets_neutral_threshold(valid_claim_spec):
 
     out = apply_verification_contract(spec)
 
-    assert out["verification"]["mode"] == "directional"
-    assert out["verification"]["pool"] == "rlvr"
+    assert out["verification"]["mode"] == "unverifiable"
+    assert out["verification"]["pool"] == "exploration"
     assert out["thresholds"][0]["metric"] == "length_ratio"
     assert out["thresholds"][0]["pass_threshold"] == 1.0
-    # directional thresholds carry no absolute target -> pass/fail reward, not
-    # degenerate continuous shaping.
     assert "target_value" not in out["thresholds"][0]
     # the neutral point is structural (implied by the public claim), so it is a
     # visible pass criterion, not a hidden answer-key number.
@@ -72,8 +70,8 @@ def test_directional_difference_neutral_point_is_zero(valid_claim_spec):
 
     out = apply_verification_contract(spec)
 
-    assert out["verification"]["mode"] == "directional"
-    assert out["verification"]["pool"] == "rlvr"
+    assert out["verification"]["mode"] == "unverifiable"
+    assert out["verification"]["pool"] == "exploration"
     assert out["thresholds"][0]["pass_threshold"] == 0.0
 
 

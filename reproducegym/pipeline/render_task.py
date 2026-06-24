@@ -93,6 +93,7 @@ def derive_contract(spec: dict[str, Any]) -> dict[str, Any]:
             t["metric"]: t["pass_threshold"] for t in thresholds if not _threshold_is_visible(t)
         },
         "threshold_rationale": {t["metric"]: t.get("rationale", "") for t in thresholds},
+        "reward_curves": dict(spec.get("reward_curves") or {}),
         "required_files": list(required.get("files", [])),
         "metrics_csv_columns": list(required.get("metrics_csv_columns", [])),
         "min_rows_per_condition": required.get("min_rows_per_condition"),
@@ -408,6 +409,7 @@ def render_reward_targets_yaml(spec: dict[str, Any]) -> str:
             }
             for metric, value in c["thresholds"].items()
         },
+        "reward_curves": c["reward_curves"],
         "verdicts": c["verdicts"],
         "verification": {
             "mode": c["verification_mode"],

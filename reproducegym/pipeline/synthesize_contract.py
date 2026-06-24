@@ -6,10 +6,9 @@ verifier will score them. This module performs the narrow deterministic bridge:
 1. hidden numeric target params that can be *safely* bound to a metric become
    numeric thresholds (with audit evidence + tolerance);
 2. metrics whose formula is a cross-condition comparison (a ratio/difference of
-   two or more conditions) but that carry no absolute paper number get a
-   *directional* threshold at the no-effect point, so a qualitative "A beats B"
-   claim still produces a non-degenerate pass/fail reward instead of being
-   dropped;
+   two or more conditions) but that carry no absolute paper number may get a
+   public no-effect threshold for diagnostics, but they stay out of the RLVR pool
+   because reward curves require paper-grounded target values;
 3. anything that still cannot be bound stays in the ``exploration`` pool with an
    explicit reason, instead of silently producing a degenerate RLVR task.
 
@@ -330,26 +329,38 @@ def apply_verification_contract(spec: dict[str, Any]) -> dict[str, Any]:
         out["verdict_rules"] = _default_verdict_rules(threshold_metrics)
 
     verification = dict(out.get("verification") or {})
-    if covers_all_metrics:
-        has_numeric_target = any(
-            t.get("target_value") is not None
-            for t in thresholds
-            if t.get("metric") in metric_by_name
-        )
-        default_mode = "numeric_threshold" if has_numeric_target else "directional"
-        verification.setdefault("mode", default_mode)
+    target_metrics = {
+        str(t["metric"])
+        for t in thresholds
+        if t.get("metric") in metric_by_name and t.get("target_value") is not None
+    }
+    covers_all_targets = bool(metric_names) and set(metric_names).issubset(target_metrics)
+
+    if covers_all_metrics and covers_all_targets:
+        verification.setdefault("mode", "numeric_threshold")
         verification.setdefault("pool", "rlvr")
     else:
         verification["mode"] = verification.get("mode") or "unverifiable"
         verification["pool"] = "exploration"
         reason_bits: list[str] = []
         missing = sorted(set(metric_names) - set(threshold_metrics))
+        missing_targets = sorted(set(metric_names) - target_metrics)
         if missing:
             reason_bits.append(
                 "missing executable thresholds for primary metrics: " + ", ".join(missing)
             )
+        if missing_targets:
+            reason_bits.append(
+                "missing paper-grounded target_value for primary metrics: "
+                + ", ".join(missing_targets)
+            )
         elif not metric_names:
             reason_bits.append("claim has no primary metrics")
+        if directional_metrics:
+            reason_bits.append(
+                "directional-only threshold(s) are diagnostic, not strong RLVR targets: "
+                + ", ".join(sorted(directional_metrics))
+            )
         reason_bits.extend(rejected)
         if reason_bits:
             verification["reason"] = "; ".join(reason_bits)

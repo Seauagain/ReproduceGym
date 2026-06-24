@@ -23,7 +23,7 @@ def _refined_claim(**overrides):
             "summary": "Run both methods on the same evaluation set and write metrics.csv."
         },
         "verification_contract": {
-            "type": "directional_comparison",
+            "type": "numeric_threshold",
             "conditions": [
                 {"label": "method_a", "description": "Method A"},
                 {"label": "method_b", "description": "Method B"},
@@ -36,7 +36,16 @@ def _refined_claim(**overrides):
                 }
             ],
             "params": [],
-            "thresholds": [],
+            "thresholds": [
+                {
+                    "metric": "pass1_gap",
+                    "pass_threshold": 0.05,
+                    "target_value": 0.1,
+                    "tolerance_abs": 0.05,
+                    "source": "Table 1",
+                    "target_evidence": {"source": "Table 1"},
+                }
+            ],
             "verdict_rules": {},
         },
         "likely_pool": "rlvr",
@@ -150,10 +159,72 @@ def test_select_claims_for_build_prefers_rlvr_then_exploration():
 
     selected = select_claims_for_build([exploration, rlvr], report, max_claims=2)
 
-    assert [item["statement"] for item in selected] == ["RLVR claim", "Exploration claim"]
+    assert [item["statement"] for item in selected] == ["RLVR claim"]
     assert selected[0]["verification"]["pool"] == "rlvr"
-    assert selected[1]["verification"]["pool"] == "exploration"
     assert selected[0]["contract_hash"]
+
+
+def test_directional_only_claim_is_not_selected_for_rlvr():
+    claim = _refined_claim(
+        verification_contract={
+            "type": "directional_comparison",
+            "conditions": [
+                {"label": "method_a", "description": "Method A"},
+                {"label": "method_b", "description": "Method B"},
+            ],
+            "metrics": [
+                {
+                    "name": "pass1_gap",
+                    "formula": "mean(method_a.pass1) - mean(method_b.pass1)",
+                    "direction": "higher_is_better",
+                }
+            ],
+            "params": [],
+            "thresholds": [],
+            "verdict_rules": {},
+        }
+    )
+
+    report = build_claim_verification_report([claim])
+    selected = select_claims_for_build([claim], report, max_claims=1)
+
+    assert report[0]["verification"]["pool"] == "exploration"
+    assert "target_value" in report[0]["verification"]["reason"]
+    assert selected == []
+
+
+def test_direction_target_conflict_is_not_selected_for_rlvr():
+    claim = _refined_claim(
+        statement="Baseline hallucination rate should match a reported value.",
+        verification_contract={
+            "type": "numeric_threshold",
+            "conditions": [{"label": "baseline", "description": "baseline"}],
+            "metrics": [
+                {
+                    "name": "hallucination_rate",
+                    "formula": "mean(baseline.hallucinated)",
+                    "direction": "lower_is_better",
+                }
+            ],
+            "params": [],
+            "thresholds": [
+                {
+                    "metric": "hallucination_rate",
+                    "pass_threshold": 0.3,
+                    "target_value": 0.41,
+                    "tolerance_abs": 0.11,
+                    "source": "paper text",
+                    "target_evidence": {"source": "paper text"},
+                }
+            ],
+            "verdict_rules": {},
+        },
+    )
+
+    report = build_claim_verification_report([claim])
+
+    assert report[0]["verification"]["pool"] == "exploration"
+    assert "reward curve" in report[0]["verification"]["reason"]
 
 
 def test_final_claim_id_assignment_preserves_claim_uid_and_contract_hash():

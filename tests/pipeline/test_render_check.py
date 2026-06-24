@@ -62,10 +62,10 @@ def test_check_reward_reproduced_and_failed(tmp_path, valid_claim_spec):
     (ws / "output" / "result.json").write_text("{}", encoding="utf-8")
 
     _write_metrics_csv(ws, baseline_len=100, treatment_len=70)  # ratio 0.7 <= 0.8
-    assert _run_check(check_path, ws) == 0.8
+    assert _run_check(check_path, ws) == 1.0
 
     _write_metrics_csv(ws, baseline_len=100, treatment_len=95)  # ratio 0.95 > 0.8
-    assert _run_check(check_path, ws) == 0.35
+    assert _run_check(check_path, ws) == 0.0
 
 
 def test_check_reward_is_continuous_when_target_metadata_exists(tmp_path, valid_claim_spec):
@@ -77,20 +77,29 @@ def test_check_reward_is_continuous_when_target_metadata_exists(tmp_path, valid_
             "tolerance_abs": 0.12,
         }
     )
+    spec["reward_curves"]["length_ratio"] = {
+        "metric": "length_ratio",
+        "direction": "lower_is_better",
+        "points": [
+            {"value": 1.04, "reward": 0.0},
+            {"value": 0.92, "reward": 0.5},
+            {"value": 0.8, "reward": 1.0},
+        ],
+    }
     check_path = write_check(spec, tmp_path / "reward")
     ws = tmp_path / "ws"
     (ws / "output").mkdir(parents=True)
     (ws / "output" / "result.json").write_text("{}", encoding="utf-8")
 
     _write_metrics_csv(ws, baseline_len=100, treatment_len=80)  # exact target
-    assert _run_check(check_path, ws) == 0.8
+    assert _run_check(check_path, ws) == 1.0
 
     _write_metrics_csv(ws, baseline_len=100, treatment_len=90)  # within tolerance
-    assert _run_check(check_path, ws) == 0.8
+    assert _run_check(check_path, ws) == pytest.approx(0.583333)
 
-    _write_metrics_csv(ws, baseline_len=100, treatment_len=95)  # beyond threshold -> failed cap
+    _write_metrics_csv(ws, baseline_len=100, treatment_len=95)  # beyond threshold -> curve penalty
     reward = _run_check(check_path, ws)
-    assert reward == 0.35
+    assert reward == pytest.approx(0.375)
 
 
 def test_check_ignores_self_reported_verdict(tmp_path, valid_claim_spec):
@@ -103,7 +112,7 @@ def test_check_ignores_self_reported_verdict(tmp_path, valid_claim_spec):
         encoding="utf-8",
     )
     _write_metrics_csv(ws, baseline_len=100, treatment_len=95)
-    assert _run_check(check_path, ws) == 0.35  # recomputed -> failed, self-report ignored
+    assert _run_check(check_path, ws) == 0.0  # recomputed from curve, self-report ignored
 
 
 def test_check_missing_files_is_invalid(tmp_path, valid_claim_spec):
@@ -134,7 +143,7 @@ def test_full_loop_via_score(tmp_path, valid_claim_spec):
     (ws / "output").mkdir(parents=True)
     (ws / "output" / "result.json").write_text("{}", encoding="utf-8")
     _write_metrics_csv(ws, baseline_len=100, treatment_len=70)
-    assert score(task_dir, ws) == 0.8
+    assert score(task_dir, ws) == 1.0
 
 
 def test_writes_verification_report(tmp_path, valid_claim_spec):

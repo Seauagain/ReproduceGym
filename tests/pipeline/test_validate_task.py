@@ -17,6 +17,19 @@ def _write_check_py(task_dir, contract_overrides=None):
         "contract_hash": "cafebabe1234",
         "metrics": ["length_ratio"],
         "thresholds": {"length_ratio": 0.8},
+        "reward_curves": {
+            "length_ratio": {
+                "metric": "length_ratio",
+                "direction": "lower_is_better",
+                "points": [
+                    {"value": 0.9, "reward": 0.0},
+                    {"value": 0.8, "reward": 0.5},
+                    {"value": 0.7, "reward": 1.0},
+                ],
+                "source": {"source": "Fig. 4"},
+                "rationale": "target curve derived from Fig. 4",
+            }
+        },
         "required_files": ["output/result.json", "output/metrics.csv"],
         "verdicts": ["reproduced", "failed", "inconclusive", "invalid"],
     }

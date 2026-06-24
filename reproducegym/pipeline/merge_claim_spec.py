@@ -187,7 +187,7 @@ def merge_claim_spec(
     for opt in ("requires_training", "cost", "anchors", "conditions", "matched_variables"):
         if claim.get(opt) is not None:
             spec[opt] = claim[opt]
-    for opt in ("claim_uid", "contract_hash", "reproduction_protocol", "verification_contract", "verification"):
+    for opt in ("claim_uid", "contract_hash", "reproduction_protocol", "verification_contract", "verification", "reward_curves"):
         if claim.get(opt) is not None:
             spec[opt] = claim[opt]
 

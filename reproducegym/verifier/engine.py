@@ -215,6 +215,55 @@ def _continuous_score(value, details, direction):
     return max(0.0, min(1.0, 0.9 ** (err / tol)))
 
 
+def _curve_score(value, curve):
+    """Piecewise-linear score from explicit reward curve points."""
+    points = curve.get("points") or []
+    parsed = []
+    for point in points:
+        x = _as_float(point.get("value"))
+        y = _as_float(point.get("reward"))
+        if x is None or y is None:
+            continue
+        parsed.append((float(x), max(0.0, min(1.0, float(y)))))
+    if len(parsed) < 2:
+        raise VerifierError("reward curve requires at least two numeric points")
+    parsed.sort(key=lambda item: item[0])
+    for (x0, _), (x1, _) in zip(parsed, parsed[1:]):
+        if x0 == x1:
+            raise VerifierError("reward curve has duplicate value point %r" % x0)
+    value = float(value)
+    if value <= parsed[0][0]:
+        return parsed[0][1]
+    if value >= parsed[-1][0]:
+        return parsed[-1][1]
+    for (x0, y0), (x1, y1) in zip(parsed, parsed[1:]):
+        if x0 <= value <= x1:
+            frac = (value - x0) / (x1 - x0)
+            return max(0.0, min(1.0, y0 + frac * (y1 - y0)))
+    raise VerifierError("reward curve interpolation failed")
+
+
+def _aggregate_scores(scores, spec):
+    if not scores:
+        return None
+    reward_cfg = spec.get("reward") or {}
+    aggregation = reward_cfg.get("aggregation") or "min"
+    if aggregation == "weighted_mean":
+        weights = reward_cfg.get("weights") or {}
+        total_w = 0.0
+        total = 0.0
+        for name, score in scores.items():
+            w = _as_float(weights.get(name), 1.0)
+            if w is None or w <= 0:
+                continue
+            total_w += w
+            total += w * score
+        return (total / total_w) if total_w else None
+    if aggregation == "mean":
+        return sum(scores.values()) / len(scores)
+    return min(scores.values())
+
+
 def recompute(workspace, spec):
     """Score a finished workspace by recomputing metrics from artifacts.
 
@@ -267,6 +316,7 @@ def recompute(workspace, spec):
     windows = spec.get("windows", {})
     thresholds = spec.get("thresholds", {})
     threshold_details = spec.get("threshold_details", {})
+    reward_curves = spec.get("reward_curves", {}) or {}
     metrics = spec.get("metrics", [])
     if not metrics:
         return out("inconclusive", errors=["no primary metrics configured"])
@@ -274,6 +324,7 @@ def recompute(workspace, spec):
     report = {}
     all_pass = True
     metric_scores = []
+    curve_scores = {}
     for name in metrics:
         if name not in thresholds:
             errors.append("no threshold for metric %r" % name)
@@ -286,13 +337,25 @@ def recompute(workspace, spec):
         direction = directions.get(name, "higher_is_better")
         passed = _passes(value, thresholds[name], direction)
         all_pass = all_pass and passed
-        score = _continuous_score(
-            value,
-            threshold_details.get(name, {"pass_threshold": thresholds[name]}),
-            direction,
-        )
-        if score is not None:
-            metric_scores.append(score)
+        if reward_curves:
+            curve = reward_curves.get(name)
+            if not curve:
+                errors.append("no reward curve for metric %r" % name)
+                continue
+            try:
+                score = _curve_score(value, curve)
+            except VerifierError as exc:
+                errors.append("metric %r reward curve: %s" % (name, exc))
+                continue
+            curve_scores[name] = score
+        else:
+            score = _continuous_score(
+                value,
+                threshold_details.get(name, {"pass_threshold": thresholds[name]}),
+                direction,
+            )
+            if score is not None:
+                metric_scores.append(score)
         report[name] = {
             "value": round(value, 6),
             "pass_threshold": thresholds[name],
@@ -305,6 +368,17 @@ def recompute(workspace, spec):
     if errors:
         return out("inconclusive", metrics=report, errors=errors)
     verdict = "reproduced" if all_pass else "failed"
+    if reward_curves:
+        shaped = _aggregate_scores(curve_scores, spec)
+        if shaped is None:
+            return out("inconclusive", metrics=report, errors=["no reward curves scored"])
+        return {
+            "reward": round(max(0.0, min(1.0, shaped)), 6),
+            "verdict": verdict,
+            "metrics": report,
+            "errors": [],
+            "scored_by": "reproducegym-recompute",
+        }
     if metric_scores:
         shaped = max(0.0, min(1.0, sum(metric_scores) / len(metric_scores)))
         reward = min(shaped, max(0.0, min(1.0, float(rbv.get(verdict, 0.0)))))

@@ -232,6 +232,34 @@
         }
       }
     },
+    "reward_curves": {
+      "type": "object",
+      "description": "Canonical per-metric target reward curves consumed by reward/check.py. Every RLVR metric must have one.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric", "direction", "points"],
+        "properties": {
+          "metric": {"type": "string"},
+          "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "reward"],
+              "properties": {
+                "value": {"type": "number"},
+                "reward": {"type": "number", "minimum": 0, "maximum": 1}
+              }
+            }
+          },
+          "source": {"type": "object", "additionalProperties": true},
+          "rationale": {"type": "string"}
+        }
+      }
+    },
     "required_outputs": {
       "type": "object",
       "description": "What the agent must write under output/. SINGLE SOURCE for task.md \u00a76/\u00a78-10, protocol agent_must_write, and check.py REQUIRED_FILES/REQUIRED_COLUMNS.",
@@ -261,7 +289,9 @@
       "additionalProperties": false,
       "properties": {
         "base_by_verdict": {"type": "object", "description": "e.g. {reproduced_strict:0.9, reproduced:0.8, failed:0.35, inconclusive:0.2, invalid:0.0}."},
-        "evidence_bonus_cap": {"type": "number"}
+        "evidence_bonus_cap": {"type": "number"},
+        "aggregation": {"type": "string", "enum": ["min", "mean", "weighted_mean"]},
+        "weights": {"type": "object"}
       }
     },
     "verification": {

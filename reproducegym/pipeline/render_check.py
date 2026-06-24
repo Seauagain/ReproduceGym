@@ -103,6 +103,7 @@ def render_check_py(spec: dict[str, Any]) -> str:
         "contract_hash": c.get("contract_hash"),
         "metrics": c["metric_names"],
         "thresholds": c["thresholds"],
+        "reward_curves": c["reward_curves"],
         "required_files": c["required_files"],
         "verdicts": c["verdicts"],
     }
@@ -115,6 +116,7 @@ def render_check_py(spec: dict[str, Any]) -> str:
         "windows": c["metric_window"],
         "thresholds": c["thresholds"],
         "threshold_details": c["threshold_details"],
+        "reward_curves": c["reward_curves"],
         "required_files": c["required_files"],
         "metrics_csv": _metrics_csv_name(c["required_files"]),
         "metrics_csv_columns": c["metrics_csv_columns"],

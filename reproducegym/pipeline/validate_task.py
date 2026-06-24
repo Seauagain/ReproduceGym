@@ -74,6 +74,28 @@ def _extract_check_contract(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _reward_curve_problem(curve: dict[str, Any]) -> str | None:
+    points = curve.get("points") or []
+    parsed: list[tuple[float, float]] = []
+    for point in points:
+        if not isinstance(point, dict):
+            return "point is not an object"
+        try:
+            value = float(point.get("value"))
+            reward = float(point.get("reward"))
+        except (TypeError, ValueError):
+            return "point has non-numeric value/reward"
+        if reward < 0.0 or reward > 1.0:
+            return "point reward is outside [0,1]"
+        parsed.append((value, reward))
+    if len(parsed) < 2:
+        return "fewer than two numeric points"
+    values = [value for value, _ in parsed]
+    if len(values) != len(set(values)):
+        return "duplicate value point"
+    return None
+
+
 def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[str]:
     task_dir = Path(task_dir)
     spec = load_claim_spec(claim_spec) if isinstance(claim_spec, (str, Path)) else claim_spec
@@ -218,6 +240,8 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         verification = targets.get("verification") or {}
         if verification.get("pool") != c["verification_pool"]:
             add("reward/targets.yaml verification pool mismatch")
+        if dict(targets.get("reward_curves") or {}) != c["reward_curves"]:
+            add("reward/targets.yaml reward_curves mismatch")
 
     missing_thresholds = sorted(set(c["metric_names"]) - set(c["thresholds"]))
     for metric in spec.get("metrics") or []:
@@ -234,13 +258,32 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
                 "rlvr task has no executable threshold for metric(s): "
                 + ", ".join(missing_thresholds)
             )
+        missing_curves = sorted(set(c["metric_names"]) - set(c["reward_curves"]))
+        if missing_curves:
+            add(
+                "rlvr task has no reward curve for metric(s): "
+                + ", ".join(missing_curves)
+            )
+        missing_targets = []
         for metric in c["metric_names"]:
             details = c["threshold_details"].get(metric) or {}
+            if details.get("target_value") is None:
+                missing_targets.append(metric)
             evidence = details.get("target_evidence") or {}
             if not (details.get("source") or evidence.get("source")):
                 add(f"rlvr threshold for metric '{metric}' is missing target evidence source")
             if not (details.get("rationale") or evidence.get("read_from")):
                 add(f"rlvr threshold for metric '{metric}' is missing target evidence rationale")
+            curve = c["reward_curves"].get(metric)
+            if isinstance(curve, dict):
+                problem = _reward_curve_problem(curve)
+                if problem:
+                    add(f"rlvr reward curve for metric '{metric}' is invalid: {problem}")
+        if missing_targets:
+            add(
+                "rlvr task has no paper-grounded target_value for metric(s): "
+                + ", ".join(sorted(missing_targets))
+            )
 
     # --- exposure: no hidden threshold value may appear in input_files/ --- #
     if input_dir.is_dir():
@@ -272,6 +315,8 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
                 add("check.py CONTRACT contract_hash disagrees with spec")
             if dict(contract.get("thresholds", {})) != c["thresholds"]:
                 add("check.py CONTRACT thresholds disagree with spec")
+            if dict(contract.get("reward_curves", {})) != c["reward_curves"]:
+                add("check.py CONTRACT reward_curves disagree with spec")
             if list(contract.get("required_files", [])) != c["required_files"]:
                 add("check.py CONTRACT required_files disagree with spec")
             if set(contract.get("verdicts", [])) != set(c["verdicts"]):

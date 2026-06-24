@@ -38,6 +38,7 @@ from reproducegym.pipeline.paper_assets import (
 )
 from reproducegym.pipeline.render_check import write_baseline_check
 from reproducegym.pipeline.render_task import render_task
+from reproducegym.pipeline.token_usage import RecordingLLMClient, RecordingVLClient, TokenUsageRecorder
 from reproducegym.pipeline.validate_task import validate_task
 from reproducegym.runlayout import PARSE, PaperLayout, write_index
 
@@ -125,6 +126,7 @@ def build_claim_tasks(
     layout = PaperLayout.for_paper(out, paper_id)
     layout.root.mkdir(parents=True, exist_ok=True)
     layout.extract_dir.mkdir(parents=True, exist_ok=True)
+    token_recorder = TokenUsageRecorder(layout.root, paper_id=paper_id)
 
     build_figures_dir = layout.extract_dir / "figures"
     if prebuilt_index is not None:
@@ -156,10 +158,20 @@ def build_claim_tasks(
     dedup_candidates_path = layout.extract_dir / "claim_candidates.dedup.json"
     if raw_candidates_path.is_file() and not refresh_claims:
         candidates = json.loads(raw_candidates_path.read_text(encoding="utf-8"))
+        token_recorder.record_event(
+            stage="build",
+            step="extract_claim_candidates.cache_hit",
+            metadata={"path": str(raw_candidates_path), "n_claims": len(candidates)},
+        )
     else:
         candidates = extract_claim_candidates(
             paper_md,
-            client=claude,
+            client=RecordingLLMClient(
+                claude,
+                token_recorder,
+                step="extract_claim_candidates",
+                metadata={"paper_md": str(paper_md)},
+            ),
             figures=figures,
             # Keep each text call below the full-paper prompt that times out on gpugeek,
             # but large enough to avoid turning one paper into dozens of model calls.
@@ -172,8 +184,21 @@ def build_claim_tasks(
 
     if dedup_candidates_path.is_file() and not refresh_claims:
         deduped_candidates = json.loads(dedup_candidates_path.read_text(encoding="utf-8"))
+        token_recorder.record_event(
+            stage="build",
+            step="dedup_claim_candidates.cache_hit",
+            metadata={"path": str(dedup_candidates_path), "n_claims": len(deduped_candidates)},
+        )
     else:
-        deduped_candidates = dedup_claim_candidates(candidates, client=claude)
+        deduped_candidates = dedup_claim_candidates(
+            candidates,
+            client=RecordingLLMClient(
+                claude,
+                token_recorder,
+                step="dedup_claim_candidates",
+                metadata={"n_input_claims": len(candidates)},
+            ),
+        )
         dedup_candidates_path.write_text(
             json.dumps(deduped_candidates, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -230,7 +255,12 @@ def build_claim_tasks(
                 claim_evidence = extract_claim_figure_evidence(
                     claim,
                     figures_dir_for_vl,
-                    client=vl,
+                    client=RecordingVLClient(
+                        vl,
+                        token_recorder,
+                        step="extract_claim_figure_evidence",
+                        metadata={"claim_id": claim_id},
+                    ),
                     figures_index=figures,
                     min_confidence=vl_min_confidence,
                     strict=strict_vl,
@@ -277,6 +307,7 @@ def build_claim_tasks(
         )
 
     manifest = write_index(layout, paper_id=paper_id)
+    token_summary = token_recorder.write_summary()
     return {
         "paper_id": paper_id,
         "built": built,
@@ -288,4 +319,6 @@ def build_claim_tasks(
         "selection": str(layout.extract_dir / "claim_selection.json"),
         "parse_images": parse_images,
         "image_evidence": bool(aggregate_evidence),
+        "token_usage": str(token_recorder.jsonl_path),
+        "token_usage_summary": str(token_summary),
     }

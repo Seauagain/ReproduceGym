@@ -169,6 +169,10 @@ def test_parse_paper_url_builds_bundle(tmp_path):
     meta = json.loads((parse_dir / "parse.json").read_text())
     assert meta["source"]["resolved"] == "https://arxiv.org/pdf/2503.20783"
     assert res["n_figures"] == 1
+    assert Path(res["token_usage"]).is_file()
+    summary = json.loads(Path(res["token_usage_summary"]).read_text())
+    assert summary["totals"]["usage_records"] == 0
+    assert summary["totals"]["usage_unavailable_records"] >= 2
     # canonical parsed paper lives only in 00-parse/
     assert not (runs / "2503.20783" / "paper.md").exists()
 

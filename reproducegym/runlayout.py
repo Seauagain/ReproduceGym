@@ -267,6 +267,8 @@ def build_manifest(layout: PaperLayout, *, paper_id: str | None = None) -> dict[
         "generated_at": _now_iso(),
         "has_parsed_bundle": layout.parsed_paper_path.is_file(),
         "has_paper_snapshot": layout.paper_path.is_file(),
+        "has_token_usage": (layout.root / "token_usage.jsonl").is_file(),
+        "has_token_usage_summary": (layout.root / "token_usage.summary.json").is_file(),
         "claims": claims,
         "candidate_claims": candidate_claims,
         "specs": specs,
@@ -309,6 +311,7 @@ def render_readme(manifest: dict[str, Any]) -> str:
         f"- specs built: **{len(manifest.get('specs', []))}**",
         f"- active tasks rendered: **{len(manifest.get('tasks', []))}**",
         f"- stale/historical tasks: **{len(manifest.get('stale_tasks', []))}**",
+        f"- token usage: **{'yes' if manifest.get('has_token_usage') else 'no'}**",
         "",
     ]
 

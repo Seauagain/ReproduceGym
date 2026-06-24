@@ -13,9 +13,23 @@ Command construction is pure (no network), so it is unit-tested directly.
 from __future__ import annotations
 
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from reproducegym.config import dotenv_values
 from reproducegym.trajectory import Trajectory
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0"})
+
+
+def _is_loopback_url(url: str) -> bool:
+    """True for a local capture-proxy URL (http://127.0.0.1:PORT). Used so build_env
+    honors run.py's capture redirect instead of clobbering it back to the relay."""
+    if not url:
+        return False
+    try:
+        return (urlsplit(url).hostname or "") in _LOOPBACK_HOSTS
+    except ValueError:
+        return False
 
 
 class AgentBackend:
@@ -45,14 +59,31 @@ class AgentBackend:
 
 class ClaudeCodeBackend(AgentBackend):
     name = "claude-code"
+    # Endpoint + auth are the only secrets the redactor must scrub from trajectories.
     env_keys = (
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_API_KEY",
+    )
+    # Claude Code model-routing / tuning knobs forwarded verbatim from .env, matching
+    # the interactive `cc-ds` baseline. All of these are PROVEN safe against the
+    # gpugeek relay (a `claude --bare -p` smoke with them set returns normally and
+    # reports contextWindow=1_000_000); they are NOT the cause of the connection
+    # resets (a leftover *_PROXY in the agent env is — see build_env).
+    _CLAUDE_TUNING_KEYS = (
         "ANTHROPIC_DEFAULT_OPUS_MODEL",
         "ANTHROPIC_DEFAULT_SONNET_MODEL",
         "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+        "CLAUDE_CODE_EFFORT_LEVEL",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-        "CLAUDE_CODE_MAX_TURNS",
+    )
+    # Any proxy in the sandbox env routes Claude Code's relay calls through it; the
+    # gpugeek relay then resets the connection (the CLI retries 11x and dies with
+    # "ECONNRESET"). The model API is reachable directly, so strip every proxy
+    # variant. Capture-mode upstream uses http.client (proxy-agnostic) anyway.
+    _PROXY_KEYS = (
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
     )
 
     def __init__(
@@ -64,7 +95,9 @@ class ClaudeCodeBackend(AgentBackend):
     ):
         env = dotenv_values()
         self.binary = binary
-        self.model = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        self.model = model or env.get("CLAUDE_CODE_MODEL") or env.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        if self.model and self.model.startswith("Vendor2/") and "[" not in self.model:
+            self.model += "[1m]"
         # Precedence: an explicit arg wins; 0 means UNCAPPED (no cap), which is
         # distinct from None=unset (fall back to the CLAUDE_CODE_MAX_TURNS env
         # default). A long training run polled turn-by-turn always hits a finite
@@ -76,13 +109,36 @@ class ClaudeCodeBackend(AgentBackend):
             self.max_turns = max_turns or None
 
     def build_env(self, base: Mapping[str, str]) -> dict[str, str]:
+        # super().build_env injects ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY from .env.
+        incoming_base_url = base.get("ANTHROPIC_BASE_URL", "")
         env = super().build_env(base)
-        # Keep the env var consistent with the resolved cap. When uncapped, strip
-        # it so the claude CLI cannot silently re-cap from a leftover env value.
-        if self.max_turns:
-            env["CLAUDE_CODE_MAX_TURNS"] = str(self.max_turns)
-        else:
-            env.pop("CLAUDE_CODE_MAX_TURNS", None)
+        file_env = dotenv_values()
+        # CAPTURE: when run.py points the agent at the local capture proxy
+        # (http://127.0.0.1:PORT), keep it. super() would otherwise overwrite it with
+        # the .env relay URL, so the agent would skip the proxy and capture nothing.
+        if _is_loopback_url(incoming_base_url):
+            env["ANTHROPIC_BASE_URL"] = incoming_base_url
+        # Forward model-routing / tuning knobs from .env (parity with cc-ds): keeps
+        # subagents on the right model and preserves the 1M context + effort level.
+        for key in self._CLAUDE_TUNING_KEYS:
+            value = file_env.get(key)
+            if value:
+                env[key] = value
+        # The resolved main model (with its [1m] suffix) must also drive the `opus`
+        # alias so the default-model path gets the 1M context window, not just the
+        # explicit --model flag.
+        if self.model:
+            env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = self.model
+        # ROOT-CAUSE FIX for the ECONNRESET storms: scrub every proxy variant so the
+        # agent talks to the relay (or the local capture proxy) directly.
+        for key in self._PROXY_KEYS:
+            env.pop(key, None)
+        # --bare authenticates strictly via ANTHROPIC_API_KEY; a stray AUTH_TOKEN
+        # (e.g. from the deepseek cc-ds flow) makes auth ambiguous.
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        # Turns are bounded by --max-turns (CLI) + wall-clock timeout, never by a
+        # leftover env cap that would silently truncate a long polled training run.
+        env.pop("CLAUDE_CODE_MAX_TURNS", None)
         return env
 
     def build_command(
@@ -90,6 +146,7 @@ class ClaudeCodeBackend(AgentBackend):
     ) -> list[str]:
         cmd = [
             self.binary,
+            "--bare",
             "-p",
             prompt,
             "--output-format",

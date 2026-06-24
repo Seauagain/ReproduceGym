@@ -42,8 +42,6 @@ _HOP_BY_HOP = frozenset(
         "accept-encoding",
     }
 )
-
-
 @dataclass
 class ProxyConfig:
     upstream_base: str

@@ -116,6 +116,8 @@ def test_build_consumes_parse_bundle_and_resolves_figures(tmp_path, make_llm):
     )
     assert res["paper_id"] == "paper1" and res["image_evidence"] is True
     assert len(res["built"]) == 1
+    assert Path(res["token_usage"]).is_file()
+    assert Path(res["token_usage_summary"]).is_file()
     task_dir = Path(res["built"][0]["task_dir"])
     extract_dir = out / "paper1" / "01-extract"
     assert (extract_dir / "claim_candidates.raw.json").is_file()

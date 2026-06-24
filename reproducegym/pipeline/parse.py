@@ -21,12 +21,14 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
 
 from reproducegym.config import dotenv_values
 from reproducegym.pipeline.paper_assets import collect_markdown_figures, write_figure_index
+from reproducegym.pipeline.token_usage import TokenUsageRecorder
 from reproducegym.runlayout import PaperLayout, write_index
 
 MINERU_BIN = "mineru-open-api"
@@ -284,6 +286,7 @@ def parse_paper(
     layout = PaperLayout.for_paper(out, paper_id)
     dest = layout.parse_dir
     dest.mkdir(parents=True, exist_ok=True)
+    token_recorder = TokenUsageRecorder(layout.root, paper_id=paper_id)
     source_meta = {
         "kind": kind,
         "resolved": resolved,
@@ -291,18 +294,49 @@ def parse_paper(
     }
 
     if kind == "url":
+        start = time.perf_counter()
         pdf_path = download_pdf(resolved, dest / "source.pdf", fetcher=fetcher)
+        token_recorder.record_event(
+            stage="parse",
+            step="download_pdf",
+            elapsed_ms=int((time.perf_counter() - start) * 1000),
+            metadata={
+                "source": source_meta,
+                "bytes": pdf_path.stat().st_size if pdf_path.is_file() else None,
+            },
+        )
+        start = time.perf_counter()
         paper_md = parse_pdf(
             pdf_path, dest, runner=runner, language=language, model=model,
             timeout=timeout, extra_args=extra_args,
         )
+        token_recorder.record_event(
+            stage="parse",
+            step="mineru_extract",
+            elapsed_ms=int((time.perf_counter() - start) * 1000),
+            metadata={"source": source_meta, "mineru_model": model, "timeout": timeout},
+        )
     elif kind == "pdf":
+        start = time.perf_counter()
         paper_md = parse_pdf(
             resolved, dest, runner=runner, language=language, model=model,
             timeout=timeout, extra_args=extra_args,
         )
+        token_recorder.record_event(
+            stage="parse",
+            step="mineru_extract",
+            elapsed_ms=int((time.perf_counter() - start) * 1000),
+            metadata={"source": source_meta, "mineru_model": model, "timeout": timeout},
+        )
     else:  # md passthrough (figures collected from sibling images/)
+        start = time.perf_counter()
         paper_md = parse_pdf(resolved, dest, runner=runner)
+        token_recorder.record_event(
+            stage="parse",
+            step="md_passthrough",
+            elapsed_ms=int((time.perf_counter() - start) * 1000),
+            metadata={"source": source_meta},
+        )
 
     figures: list[dict[str, Any]] = []
     if layout.figure_index_path.is_file():
@@ -323,7 +357,13 @@ def parse_paper(
         + "\n",
         encoding="utf-8",
     )
+    token_recorder.record_event(
+        stage="parse",
+        step="bundle_index",
+        metadata={"n_figures": len(figures), "paper_chars": paper_md.stat().st_size},
+    )
     write_index(layout, paper_id=paper_id)
+    token_summary = token_recorder.write_summary()
     return {
         "paper_id": paper_id,
         "paper_md": str(paper_md),
@@ -331,4 +371,6 @@ def parse_paper(
         "figures": figures,
         "n_figures": len(figures),
         "source": source_meta,
+        "token_usage": str(token_recorder.jsonl_path),
+        "token_usage_summary": str(token_summary),
     }

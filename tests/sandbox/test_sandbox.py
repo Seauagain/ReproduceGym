@@ -30,6 +30,20 @@ def test_local_sandbox_nonzero(tmp_path):
     assert res.returncode == 2
 
 
+def test_local_sandbox_stdin_is_devnull(tmp_path):
+    # `cat` reads stdin; with stdin=DEVNULL it must get EOF immediately, not hang.
+    res = LocalSandbox().run(["bash", "-c", "cat"], cwd=tmp_path, timeout=10)
+    assert res.returncode == 0
+    assert res.stdout == ""
+
+
+def test_local_sandbox_timeout_kills_tree_and_returns_124(tmp_path):
+    from reproducegym.sandbox.sandbox import TIMEOUT_RETURNCODE
+
+    res = LocalSandbox().run(["bash", "-c", "sleep 30"], cwd=tmp_path, timeout=1)
+    assert res.returncode == TIMEOUT_RETURNCODE
+
+
 def test_docker_build_argv(tmp_path):
     sb = DockerSandbox(image="repro:latest")
     argv = sb.build_argv(["claude", "-p", "x"], cwd=tmp_path, env_keys=["ANTHROPIC_API_KEY"])

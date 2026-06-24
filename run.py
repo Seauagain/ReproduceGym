@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO))
 from reproducegym.compute.sources import load_inventory
 from reproducegym.config import parse_env_text
 from reproducegym.estimate import RuntimeEstimate, estimate_runtime
+from reproducegym.pipeline.token_usage import TokenUsageRecorder
 from reproducegym.runlayout import PaperLayout, write_run_record
 from reproducegym.sandbox.backends import ClaudeCodeBackend
 from reproducegym.sandbox.launcher import launch
@@ -35,8 +36,7 @@ from reproducegym.sandbox.runner import run
 _PROVIDER_KEYS = (
     "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY",
     "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-    "CLAUDE_CODE_MAX_TURNS",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 )
 
 
@@ -173,6 +173,56 @@ def resolve_run_dir(task: Path, out_fallback: str) -> Path:
     return base / f"{n:03d}"
 
 
+def _record_run_token_usage(
+    *,
+    task: Path,
+    run_dir: Path,
+    session: str,
+    capture_enabled: bool,
+    completions: list | None = None,
+) -> None:
+    layout = PaperLayout.from_task_dir(task)
+    if layout is None:
+        return
+    meta = _task_metadata(task)
+    recorder = TokenUsageRecorder(layout.root, paper_id=layout.root.name)
+    if not capture_enabled:
+        recorder.record_event(
+            stage="run",
+            step="agent_completion.no_capture",
+            metadata={"run_dir": str(run_dir), "session": session, "claim_id": meta.get("claim_id")},
+        )
+        recorder.write_summary()
+        return
+    if not completions:
+        recorder.record_event(
+            stage="run",
+            step="agent_completion.no_usage",
+            metadata={"run_dir": str(run_dir), "session": session, "claim_id": meta.get("claim_id")},
+        )
+        recorder.write_summary()
+        return
+    for i, comp in enumerate(completions, start=1):
+        request = comp.request if isinstance(comp.request, dict) else {}
+        response = comp.response if isinstance(comp.response, dict) else {}
+        recorder.record(
+            stage="run",
+            step="agent_completion",
+            provider=comp.api_type,
+            model=request.get("model") or meta.get("model"),
+            usage=response.get("usage"),
+            metadata={
+                "run_dir": str(run_dir),
+                "session": session,
+                "claim_id": meta.get("claim_id"),
+                "spec_hash": meta.get("spec_hash"),
+                "completion_id": getattr(comp, "completion_id", None),
+                "sequence": i,
+            },
+        )
+    recorder.write_summary()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Reproduce one claim on a chosen server.")
     ap.add_argument("--task-dir", help="rendered task dir: runs/<paper>/03-task/<claim>/<hash>")
@@ -183,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=str(REPO / "runs"), help="fallback output root (used only if task is not in a paper layout)")
     ap.add_argument("--compute", default=str(REPO / "config" / "metax_nodes.yaml"),
                     help="compute inventory spec: a path (.yaml/.json/.md) or scheme:rest (servers-md:..., lbg:...)")
-    ap.add_argument("--model", default="opus[1m]")
+    ap.add_argument("--model", default=None)
     ap.add_argument("--max-turns", type=int, default=0,
                     help="reproduction-agent (claude -p) turn cap; 0 = UNCAPPED. A long training "
                          "polled turn-by-turn always hits a finite cap, so default to 0 and bound the "
@@ -259,6 +309,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[capture] completions={len(sess.completions)} traces={len(traj.traces)}", flush=True)
         else:
             print("[capture] WARNING: 0 completions captured", flush=True)
+        _record_run_token_usage(
+            task=task,
+            run_dir=run_dir,
+            session=session,
+            capture_enabled=True,
+            completions=sess.completions,
+        )
+    else:
+        _record_run_token_usage(
+            task=task,
+            run_dir=run_dir,
+            session=session,
+            capture_enabled=False,
+        )
 
     write_run_record(
         run_dir,

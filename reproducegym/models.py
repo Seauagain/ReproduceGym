@@ -44,6 +44,8 @@ class ClaudeClient:
         env_cap = env.get("REPRODUCEGYM_MAX_OUTPUT_TOKENS")
         self.max_tokens = int(env_cap) if env_cap else max_tokens
         self._client = None
+        self.provider = "anthropic"
+        self.last_usage = None
 
     def _ensure_client(self):
         if self._client is None:
@@ -63,6 +65,7 @@ class ClaudeClient:
             system=system or "You are a careful research-reproduction assistant.",
             messages=[{"role": "user", "content": prompt}],
         )
+        self.last_usage = getattr(resp, "usage", None)
         return "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )
@@ -110,6 +113,8 @@ class MultimodalFigureClient:
         env_max = env.get("MULTIMODAL_MAX_TOKENS") or env.get("VISION_MAX_TOKENS") or env.get("QWEN_VL_MAX_TOKENS")
         self.max_tokens = max_tokens or (int(env_max) if env_max else 16384)
         self._client = None
+        self.provider = "openai-compatible"
+        self.last_usage = None
 
     def _ensure_client(self):
         if self._client is None:
@@ -140,6 +145,7 @@ class MultimodalFigureClient:
                 }
             ],
         )
+        self.last_usage = getattr(resp, "usage", None)
         return resp.choices[0].message.content or ""
 
 

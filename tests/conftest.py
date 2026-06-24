@@ -21,6 +21,8 @@ def valid_claim_spec() -> dict:
     return copy.deepcopy(
         {
             "claim_id": "c1_demo",
+            "claim_uid": "clm_demo123",
+            "contract_hash": "cafebabe1234",
             "claim_num": 1,
             "claim_slug": "demo",
             "display_title": "Demo claim",
@@ -60,7 +62,18 @@ def valid_claim_spec() -> dict:
                 },
             ],
             "thresholds": [
-                {"metric": "length_ratio", "pass_threshold": 0.8, "exposure": "hidden"},
+                {
+                    "metric": "length_ratio",
+                    "pass_threshold": 0.8,
+                    "exposure": "hidden",
+                    "source": "Fig. 4",
+                    "target_evidence": {
+                        "param_name": "length_ratio_target",
+                        "source": "Fig. 4",
+                        "read_from": "length-vs-step curves",
+                        "confidence": 0.9,
+                    },
+                },
             ],
             "required_outputs": {
                 "files": ["output/result.json", "output/metrics.csv"],

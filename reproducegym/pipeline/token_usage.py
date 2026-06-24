@@ -64,11 +64,16 @@ class TokenUsageRecord:
     created_at: str = field(default_factory=_now_iso)
 
     def to_dict(self) -> dict[str, Any]:
+        claim_uid = self.metadata.get("claim_uid")
+        source_mode = self.metadata.get("source_mode")
+        fallback_reason = self.metadata.get("fallback_reason")
         return {
             "created_at": self.created_at,
             "paper_id": self.paper_id,
             "stage": self.stage,
             "step": self.step,
+            "claim_uid": claim_uid,
+            "source_mode": source_mode,
             "call_id": self.call_id,
             "provider": self.provider,
             "model": self.model,
@@ -79,6 +84,8 @@ class TokenUsageRecord:
             "prompt_chars": self.prompt_chars,
             "completion_chars": self.completion_chars,
             "elapsed_ms": self.elapsed_ms,
+            "wall_ms": self.elapsed_ms,
+            "fallback_reason": fallback_reason,
             "metadata": self.metadata,
         }
 

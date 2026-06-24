@@ -4,11 +4,15 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 import reproducegym.config as config
 from reproducegym.models import multimodal_figure_configured
 from reproducegym.pipeline.build_claim_tasks import (
     _resolve_paper_input,
+    _normalize_claim_type,
+    _normalize_params,
+    _normalize_thresholds,
     build_claim_tasks,
     should_parse_images,
 )
@@ -23,7 +27,7 @@ CLAIMS_JSON = json.dumps(
             "claim_type": "mechanism",
             "display_title": "std bias",
             "importance_rank": 1,
-            "metrics": [{"name": "len_ratio", "formula": "a/b", "direction": "lower_is_better"}],
+            "metrics": [{"name": "len_ratio", "formula": "mean(treatment.len) / mean(baseline.len)", "direction": "lower_is_better"}],
             "anchors": [{"kind": "figure", "ref": "Fig. 1"}],
         }
     ]
@@ -79,6 +83,68 @@ def test_parse_images_never_skips_even_when_available():
     assert should_parse_images("never", has_figures=True, configured=True) is False
 
 
+def test_threshold_normalizer_accepts_llm_shapes():
+    thresholds = _normalize_thresholds(
+        [
+            {
+                "metric": "score",
+                "pass_threshold": "0.82",
+                "exposure": "primary",
+                "target_evidence": "Table 1 reports 0.82",
+                "tolerance_abs": None,
+                "condition": "ignored",
+            }
+        ]
+    )
+
+    assert thresholds == [
+        {
+            "metric": "score",
+            "pass_threshold": 0.82,
+            "exposure": "hidden",
+            "target_evidence": {"source": "Table 1 reports 0.82"},
+        }
+    ]
+
+
+def test_threshold_normalizer_exposes_neutral_directional_thresholds():
+    thresholds = _normalize_thresholds(
+        [{"metric": "gap", "pass_threshold": 0.0, "exposure": "hidden", "target_value": 0.08}]
+    )
+
+    assert thresholds[0]["exposure"] == "visible"
+    assert thresholds[0]["target_value"] == 0.08
+
+
+def test_param_normalizer_accepts_llm_shapes():
+    params = _normalize_params(
+        [
+            {
+                "name": "batch_size",
+                "value": 512,
+                "use": "config",
+                "confidence": "high",
+                "extra": "ignored",
+            }
+        ]
+    )
+
+    assert params == [
+        {
+            "name": "batch_size",
+            "value": 512,
+            "status": "paper_specified",
+            "use": "reproduction_param",
+            "confidence": 0.85,
+        }
+    ]
+
+
+def test_claim_type_normalizer_maps_verifier_type_to_eval_only():
+    assert _normalize_claim_type("directional_comparison") == "eval_only"
+    assert _normalize_claim_type("ablation") == "ablation"
+
+
 def test_multimodal_configured_accepts_generic_env(tmp_path, monkeypatch):
     env = tmp_path / ".env"
     env.write_text(
@@ -120,13 +186,15 @@ def test_build_consumes_parse_bundle_and_resolves_figures(tmp_path, make_llm):
     assert Path(res["token_usage_summary"]).is_file()
     task_dir = Path(res["built"][0]["task_dir"])
     extract_dir = out / "paper1" / "01-extract"
-    assert (extract_dir / "claim_candidates.raw.json").is_file()
-    assert (extract_dir / "claim_candidates.dedup.json").is_file()
     assert (extract_dir / "candidate_claims.json").is_file()
-    assert (extract_dir / "selected_claims.json").is_file()
+    assert (extract_dir / "refined_claims.json").is_file()
+    assert (extract_dir / "claim_verification_report.json").is_file()
+    assert (extract_dir / "selected_claims_for_build.json").is_file()
+    assert not (extract_dir / "selected_claims.json").exists()
+    assert not (extract_dir / "claims.json").exists()
     assert (extract_dir / "claim_selection.json").is_file()
-    assert (extract_dir / "claim_figure_evidence.index.json").is_file()
-    assert any((extract_dir / "claim_figure_evidence").glob("*.yaml"))
+    assert (extract_dir / "claim_evidence.index.json").is_file()
+    assert any((extract_dir / "claim_evidence").glob("*.json"))
     # parsed figures remain in 00-parse; build/task stages do not copy image bytes
     assert (bundle / "00-parse" / "figures" / "fig1.jpg").is_file()
     assert not (extract_dir / "figures" / "fig1.jpg").exists()
@@ -136,15 +204,22 @@ def test_build_consumes_parse_bundle_and_resolves_figures(tmp_path, make_llm):
     params = (task_dir / "input_files" / "params.yaml").read_text()
     assert "policy_steps" in params
     assert "len_ratio_target" not in params
+    targets = yaml.safe_load((task_dir / "reward" / "targets.yaml").read_text())
+    assert targets["primary_thresholds"]["len_ratio"]["pass_threshold"] == 0.546
+    assert targets["primary_thresholds"]["len_ratio"]["target_evidence"]["source"] == "Fig. 1"
+    assert targets["verification"]["pool"] == "rlvr"
+    selected = json.loads((extract_dir / "selected_claims_for_build.json").read_text())
+    assert selected[0]["claim_uid"]
+    assert selected[0]["contract_hash"]
 
 
 def test_build_limits_rendered_tasks_to_max_claims(tmp_path, make_llm):
     bundle = make_parse_bundle(tmp_path)
     claims = json.dumps(
         [
-            {"statement": "first", "claim_type": "mechanism", "importance_rank": 1, "cost": "S", "verifiability": "high", "metrics": [{"name": "a", "formula": "a", "direction": "higher_is_better"}]},
-            {"statement": "second", "claim_type": "ablation", "importance_rank": 2, "cost": "S", "verifiability": "high", "metrics": [{"name": "b", "formula": "b", "direction": "higher_is_better"}]},
-            {"statement": "third", "claim_type": "headline", "importance_rank": 3, "cost": "XL", "verifiability": "medium", "metrics": [{"name": "c", "formula": "c", "direction": "higher_is_better"}]},
+            {"statement": "first", "claim_type": "mechanism", "importance_rank": 1, "cost": "S", "verifiability": "high", "metrics": [{"name": "a", "formula": "mean(a)", "direction": "higher_is_better"}]},
+            {"statement": "second", "claim_type": "ablation", "importance_rank": 2, "cost": "S", "verifiability": "high", "metrics": [{"name": "b", "formula": "mean(b)", "direction": "higher_is_better"}]},
+            {"statement": "third", "claim_type": "headline", "importance_rank": 3, "cost": "XL", "verifiability": "medium", "metrics": [{"name": "c", "formula": "mean(c)", "direction": "higher_is_better"}]},
         ]
     )
     res = build_claim_tasks(
@@ -159,16 +234,16 @@ def test_build_limits_rendered_tasks_to_max_claims(tmp_path, make_llm):
     assert len(res["built"]) == 2
     extract_dir = tmp_path / "out" / "paper1" / "01-extract"
     assert len(json.loads((extract_dir / "candidate_claims.json").read_text())) == 3
-    assert len(json.loads((extract_dir / "selected_claims.json").read_text())) == 2
+    assert len(json.loads((extract_dir / "selected_claims_for_build.json").read_text())) == 2
 
 
 def test_build_limits_vl_reads_to_selected_claims(tmp_path, make_llm):
     bundle = make_parse_bundle(tmp_path)
     claims = json.dumps(
         [
-            {"statement": "first", "claim_type": "mechanism", "importance_rank": 1, "cost": "S", "verifiability": "high", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "a", "formula": "a", "direction": "higher_is_better"}]},
-            {"statement": "second", "claim_type": "ablation", "importance_rank": 2, "cost": "S", "verifiability": "high", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "b", "formula": "b", "direction": "higher_is_better"}]},
-            {"statement": "third", "claim_type": "headline", "importance_rank": 3, "cost": "XL", "verifiability": "medium", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "c", "formula": "c", "direction": "higher_is_better"}]},
+            {"statement": "first", "claim_type": "mechanism", "importance_rank": 1, "cost": "S", "verifiability": "high", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "a", "formula": "mean(a)", "direction": "higher_is_better"}]},
+            {"statement": "second", "claim_type": "ablation", "importance_rank": 2, "cost": "S", "verifiability": "high", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "b", "formula": "mean(b)", "direction": "higher_is_better"}]},
+            {"statement": "third", "claim_type": "headline", "importance_rank": 3, "cost": "XL", "verifiability": "medium", "anchors": [{"kind": "figure", "ref": "Fig. 1"}], "metrics": [{"name": "c", "formula": "mean(c)", "direction": "higher_is_better"}]},
         ]
     )
     vl = FakeVL({"fig1.jpg": FIG_EVIDENCE}, default="{}")
@@ -181,21 +256,21 @@ def test_build_limits_vl_reads_to_selected_claims(tmp_path, make_llm):
         max_claims=1,
     )
     extract_dir = tmp_path / "out" / "paper1" / "01-extract"
-    evidence_index = json.loads((extract_dir / "claim_figure_evidence.index.json").read_text())
+    evidence_index = json.loads((extract_dir / "claim_evidence.index.json").read_text())
     assert res["n_candidate_claims"] == 3
     assert res["n_selected_claims"] == 1
-    assert len(vl.calls) == 1
-    assert len(evidence_index) == 1
+    assert len(vl.calls) == 3
+    assert len(evidence_index) == 3
 
 
 def test_refresh_claims_ignores_cached_candidates(tmp_path):
     bundle = make_parse_bundle(tmp_path)
     out = tmp_path / "out"
     first = json.dumps([
-        {"statement": "old", "claim_type": "mechanism", "importance_rank": 1, "metrics": [{"name": "old", "formula": "old", "direction": "higher_is_better"}]},
+        {"statement": "old", "claim_type": "mechanism", "importance_rank": 1, "metrics": [{"name": "old", "formula": "mean(old)", "direction": "higher_is_better"}]},
     ])
     second = json.dumps([
-        {"statement": "new", "claim_type": "mechanism", "importance_rank": 1, "metrics": [{"name": "new", "formula": "new", "direction": "higher_is_better"}]},
+        {"statement": "new", "claim_type": "mechanism", "importance_rank": 1, "metrics": [{"name": "new", "formula": "mean(new)", "direction": "higher_is_better"}]},
     ])
     build_claim_tasks(paper=bundle, out=out, parse_images="never", claude_client=SeqLLM([first]), max_claims=1)
     build_claim_tasks(
@@ -206,7 +281,7 @@ def test_refresh_claims_ignores_cached_candidates(tmp_path):
         max_claims=1,
         refresh_claims=True,
     )
-    selected = json.loads((out / "paper1" / "01-extract" / "selected_claims.json").read_text())
+    selected = json.loads((out / "paper1" / "01-extract" / "selected_claims_for_build.json").read_text())
     assert selected[0]["statement"] == "new"
 
 

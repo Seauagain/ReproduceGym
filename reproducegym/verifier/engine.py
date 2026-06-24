@@ -181,6 +181,40 @@ def _passes(value, threshold, direction):
     return value <= threshold
 
 
+def _as_float(value, default=None):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _continuous_score(value, details, direction):
+    """Return a smooth [0,1] score from paper-target distance, if available.
+
+    Verdicts still use pass_threshold. This score is the RL signal: exact-or-better
+    matches and values within tolerance get 1.0; worse results decay as
+    0.9 ** (error_beyond_tolerance / tolerance).
+    """
+    target = _as_float(details.get("target_value"))
+    if target is None:
+        return None
+    tol = _as_float(details.get("tolerance_abs"))
+    if tol is None:
+        pass_threshold = _as_float(details.get("pass_threshold"))
+        if pass_threshold is not None:
+            tol = abs(pass_threshold - target)
+    if tol is None or tol <= 0:
+        tol = max(abs(target) * 0.15, 1e-12)
+
+    if direction == "lower_is_better":
+        err = max(0.0, float(value) - (target + tol))
+    else:
+        err = max(0.0, (target - tol) - float(value))
+    return max(0.0, min(1.0, 0.9 ** (err / tol)))
+
+
 def recompute(workspace, spec):
     """Score a finished workspace by recomputing metrics from artifacts.
 
@@ -232,10 +266,15 @@ def recompute(workspace, spec):
     directions = spec.get("directions", {})
     windows = spec.get("windows", {})
     thresholds = spec.get("thresholds", {})
+    threshold_details = spec.get("threshold_details", {})
+    metrics = spec.get("metrics", [])
+    if not metrics:
+        return out("inconclusive", errors=["no primary metrics configured"])
 
     report = {}
     all_pass = True
-    for name in spec.get("metrics", []):
+    metric_scores = []
+    for name in metrics:
         if name not in thresholds:
             errors.append("no threshold for metric %r" % name)
             continue
@@ -244,16 +283,37 @@ def recompute(workspace, spec):
         except VerifierError as exc:
             errors.append("metric %r: %s" % (name, exc))
             continue
-        passed = _passes(value, thresholds[name], directions.get(name, "higher_is_better"))
+        direction = directions.get(name, "higher_is_better")
+        passed = _passes(value, thresholds[name], direction)
         all_pass = all_pass and passed
+        score = _continuous_score(
+            value,
+            threshold_details.get(name, {"pass_threshold": thresholds[name]}),
+            direction,
+        )
+        if score is not None:
+            metric_scores.append(score)
         report[name] = {
             "value": round(value, 6),
             "pass_threshold": thresholds[name],
-            "direction": directions.get(name),
+            "direction": direction,
             "passed": passed,
         }
+        if score is not None:
+            report[name]["reward"] = round(score, 6)
 
     if errors:
         return out("inconclusive", metrics=report, errors=errors)
-    return out("reproduced" if all_pass else "failed", metrics=report)
+    verdict = "reproduced" if all_pass else "failed"
+    if metric_scores:
+        shaped = max(0.0, min(1.0, sum(metric_scores) / len(metric_scores)))
+        reward = min(shaped, max(0.0, min(1.0, float(rbv.get(verdict, 0.0)))))
+        return {
+            "reward": round(reward, 6),
+            "verdict": verdict,
+            "metrics": report,
+            "errors": [],
+            "scored_by": "reproducegym-recompute",
+        }
+    return out(verdict, metrics=report)
 # === REPRODUCEGYM ENGINE END ===

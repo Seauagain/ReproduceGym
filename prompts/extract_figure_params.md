@@ -41,6 +41,9 @@ Strict JSON object. No prose outside JSON.
     {
       "name": "response_length_ratio",
       "value": 0.9,
+      "metric": "response_length_ratio",
+      "condition": "DR-GRPO vs GRPO",
+      "tolerance": {"rel": 0.3},
       "source": "Fig. 5",
       "visibility": "hidden",
       "use": "target",
@@ -61,6 +64,13 @@ Strict JSON object. No prose outside JSON.
 
 - Hidden targets are answer-key material: downstream they are routed into
   reward/, never input_files/.
+- Every target should bind to the primary metric it verifies via `metric`. If the
+  target is read visually from a curve/bar, include a conservative `tolerance`
+  (usually `{"rel": 0.25}` to `{"rel": 0.30}`) and lower confidence. If you cannot
+  bind a value to a metric, keep it as contextual evidence rather than a verifier
+  target.
+- Every target must be auditable: include the figure/table `source`, a concrete
+  `read_from` note describing the tick/panel/curve/bar used, and `confidence`.
 - Visible reproduction parameters are allowed in params.yaml because the agent
   needs them to run the experiment faithfully.
 - Prefer explicit axis labels/ticks over visual estimates. For visual estimates,

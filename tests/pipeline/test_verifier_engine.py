@@ -153,6 +153,22 @@ def test_recompute_failed_when_metric_misses(tmp_path):
     assert rep["reward"] == 0.35
 
 
+def test_recompute_failed_reward_is_capped_even_with_target_score(tmp_path):
+    ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=95)  # ratio 0.95 > 0.8
+    spec = dict(
+        SPEC,
+        threshold_details={
+            # Continuous score is 1.0 because value equals target, but verdict is
+            # still failed because pass_threshold is stricter.
+            "length_ratio": {"target_value": 0.95, "tolerance_abs": 0.1, "pass_threshold": 0.8}
+        },
+    )
+    rep = recompute(ws, spec)
+    assert rep["verdict"] == "failed"
+    assert rep["metrics"]["length_ratio"]["reward"] == 1.0
+    assert rep["reward"] == 0.35
+
+
 def test_recompute_ignores_agent_self_reported_verdict(tmp_path):
     # Agent LIES: result.json claims reproduced+reward 1.0, but the data fails.
     ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=95, result_verdict="reproduced")

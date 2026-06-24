@@ -24,20 +24,37 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from reproducegym.claim_spec import load_claim_spec
+from reproducegym.pipeline.formula_contract import formula_problem
 from reproducegym.pipeline.render_task import derive_contract, visible_files
 
 
 def _num_strings(value: Any) -> list[str]:
     out = {str(value), repr(value)}
-    if isinstance(value, float) and value.is_integer():
-        out.add(str(int(value)))
     return list(out)
+
+
+def _has_number_literal(blob: str, text: str) -> bool:
+    """Match a hidden numeric value as a standalone literal, not inside hashes/paths."""
+    pattern = re.compile(r"(?<![A-Za-z0-9_.+-])" + re.escape(text) + r"(?![A-Za-z0-9_.+-])")
+    return bool(pattern.search(blob))
+
+
+def _visible_text_for_leak_scan(text: str) -> str:
+    """Remove renderer metadata constants that are not paper/verifier answers."""
+
+    lines = []
+    for line in text.splitlines():
+        if re.match(r"^\s*(protocol_version|schema_version)\s*:", line):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _extract_check_contract(text: str) -> dict[str, Any] | None:
@@ -83,8 +100,14 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
             meta = data_entry.get("metadata") or {}
             if meta.get("claim_id") != spec["claim_id"]:
                 add("data_entry.json metadata claim_id mismatch")
+            if spec.get("claim_uid") and meta.get("claim_uid") != spec.get("claim_uid"):
+                add("data_entry.json metadata claim_uid mismatch")
+            if spec.get("contract_hash") and meta.get("contract_hash") != spec.get("contract_hash"):
+                add("data_entry.json metadata contract_hash mismatch")
             if meta.get("spec_hash") != spec["spec_hash"]:
                 add("data_entry.json metadata spec_hash mismatch")
+            if meta.get("pool") != c["verification_pool"]:
+                add("data_entry.json metadata pool mismatch")
     if not input_dir.is_dir():
         add("input_files/ missing")
     if not (reward_dir / "reward.sh").is_file():
@@ -116,6 +139,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
             add("expected.json allowed_verdicts disagree with verdict set")
         if exp.get("claim_id") != spec["claim_id"]:
             add("expected.json claim_id mismatch")
+        if spec.get("claim_uid") and exp.get("claim_uid") != spec.get("claim_uid"):
+            add("expected.json claim_uid mismatch")
+        if spec.get("contract_hash") and exp.get("contract_hash") != spec.get("contract_hash"):
+            add("expected.json contract_hash mismatch")
         if exp.get("spec_hash") != spec["spec_hash"]:
             add("expected.json spec_hash mismatch")
 
@@ -136,6 +163,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
             add(f"protocol verdict_rules has unknown verdicts: {sorted(bad_verdicts)}")
         if proto.get("claim_id") != spec["claim_id"]:
             add("protocol claim_id mismatch")
+        if spec.get("claim_uid") and proto.get("claim_uid") != spec.get("claim_uid"):
+            add("protocol claim_uid mismatch")
+        if spec.get("contract_hash") and proto.get("contract_hash") != spec.get("contract_hash"):
+            add("protocol contract_hash mismatch")
         if proto.get("spec_hash") != spec["spec_hash"]:
             add("protocol spec_hash mismatch")
 
@@ -147,6 +178,10 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         params = yaml.safe_load(params_path.read_text(encoding="utf-8")) or {}
         if params.get("claim_id") != spec["claim_id"]:
             add("params.yaml claim_id mismatch")
+        if spec.get("claim_uid") and params.get("claim_uid") != spec.get("claim_uid"):
+            add("params.yaml claim_uid mismatch")
+        if spec.get("contract_hash") and params.get("contract_hash") != spec.get("contract_hash"):
+            add("params.yaml contract_hash mismatch")
         if params.get("spec_hash") != spec["spec_hash"]:
             add("params.yaml spec_hash mismatch")
 
@@ -174,8 +209,38 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
             add(f"reward/targets.yaml thresholds {tgt} != spec {c['thresholds']}")
         if targets.get("claim_id") != spec["claim_id"]:
             add("reward/targets.yaml claim_id mismatch")
+        if spec.get("claim_uid") and targets.get("claim_uid") != spec.get("claim_uid"):
+            add("reward/targets.yaml claim_uid mismatch")
+        if spec.get("contract_hash") and targets.get("contract_hash") != spec.get("contract_hash"):
+            add("reward/targets.yaml contract_hash mismatch")
         if targets.get("spec_hash") != spec["spec_hash"]:
             add("reward/targets.yaml spec_hash mismatch")
+        verification = targets.get("verification") or {}
+        if verification.get("pool") != c["verification_pool"]:
+            add("reward/targets.yaml verification pool mismatch")
+
+    missing_thresholds = sorted(set(c["metric_names"]) - set(c["thresholds"]))
+    for metric in spec.get("metrics") or []:
+        if not isinstance(metric, dict):
+            continue
+        problem = formula_problem(metric.get("formula"))
+        if problem:
+            add(f"metric formula for '{metric.get('name')}' is not executable by check.py: {problem}")
+    if c["verification_pool"] == "rlvr":
+        if c["verification_mode"] not in {"numeric_threshold", "directional", "structural"}:
+            add(f"rlvr task has invalid verification mode: {c['verification_mode']}")
+        if missing_thresholds:
+            add(
+                "rlvr task has no executable threshold for metric(s): "
+                + ", ".join(missing_thresholds)
+            )
+        for metric in c["metric_names"]:
+            details = c["threshold_details"].get(metric) or {}
+            evidence = details.get("target_evidence") or {}
+            if not (details.get("source") or evidence.get("source")):
+                add(f"rlvr threshold for metric '{metric}' is missing target evidence source")
+            if not (details.get("rationale") or evidence.get("read_from")):
+                add(f"rlvr threshold for metric '{metric}' is missing target evidence rationale")
 
     # --- exposure: no hidden threshold value may appear in input_files/ --- #
     if input_dir.is_dir():
@@ -183,12 +248,12 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         for p in sorted(input_dir.rglob("*")):
             if p.is_file():
                 try:
-                    visible_blob += "\n" + p.read_text(encoding="utf-8")
+                    visible_blob += "\n" + _visible_text_for_leak_scan(p.read_text(encoding="utf-8"))
                 except (UnicodeDecodeError, OSError):
                     continue
         for metric, value in c["hidden_thresholds"].items():
             for s in _num_strings(value):
-                if s in visible_blob:
+                if _has_number_literal(visible_blob, s):
                     add(f"exposure leak: hidden threshold {metric}={value} appears in input_files/")
                     break
 
@@ -203,6 +268,8 @@ def validate_task(task_dir: str | Path, claim_spec: str | Path | dict) -> list[s
         else:
             if set(contract.get("metrics", [])) != set(c["metric_names"]):
                 add("check.py CONTRACT metrics disagree with spec")
+            if spec.get("contract_hash") and contract.get("contract_hash") != spec.get("contract_hash"):
+                add("check.py CONTRACT contract_hash disagrees with spec")
             if dict(contract.get("thresholds", {})) != c["thresholds"]:
                 add("check.py CONTRACT thresholds disagree with spec")
             if list(contract.get("required_files", [])) != c["required_files"]:

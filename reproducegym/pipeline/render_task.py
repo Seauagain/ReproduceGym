@@ -50,6 +50,7 @@ def derive_contract(spec: dict[str, Any]) -> dict[str, Any]:
     required = spec.get("required_outputs", {})
     return {
         "claim_id": spec["claim_id"],
+        "spec_hash": spec["spec_hash"],
         "paper_id": spec["paper_id"],
         "metric_names": [m["name"] for m in metrics],
         "metric_direction": {m["name"]: m["direction"] for m in metrics},
@@ -80,7 +81,7 @@ def task_id_for(spec: dict[str, Any]) -> str:
 def visible_files(spec: dict[str, Any]) -> list[str]:
     files = list(BASE_VISIBLE_FILES)
     for asset in spec.get("input_files", []):
-        name = Path(asset).name
+        name = str(asset)
         if name not in files:
             files.append(name)
     return files
@@ -101,6 +102,11 @@ def render_data_entry(spec: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "paper_id": spec["paper_id"],
             "claim_id": spec["claim_id"],
+            "claim_num": spec.get("claim_num"),
+            "claim_slug": spec.get("claim_slug"),
+            "display_title": spec.get("display_title"),
+            "importance_rank": spec.get("importance_rank"),
+            "spec_hash": spec["spec_hash"],
             "claim_type": spec.get("claim_type"),
             "tier": spec["tier"],
             "exposure": spec["exposure_policy"],
@@ -121,6 +127,7 @@ def render_task_md(spec: dict[str, Any]) -> str:
     add = lines.append
 
     add(f"# Task: Reproduce claim `{spec['claim_id']}`\n")
+    add(f"Spec hash: `{spec['spec_hash']}`\n")
     add(
         "You are an autonomous reproduction agent. Read this specification and the "
         "referenced parameter files, consult the paper when needed, then write whatever "
@@ -141,6 +148,14 @@ def render_task_md(spec: dict[str, Any]) -> str:
         add("")
     else:
         add("No structured anchors were provided.\n")
+    if spec.get("figure_dependencies"):
+        add("Figure evidence used when building this task (images live in the parse bundle):\n")
+        for fig in spec["figure_dependencies"]:
+            note = f" — {fig.get('caption')}" if fig.get("caption") else ""
+            source = fig.get("source_path") or fig.get("image_file") or ""
+            source_note = f" (`{source}`)" if source else ""
+            add(f"- {fig.get('figure_ref')}{source_note}{note}")
+        add("")
 
     add("## 3. Experimental Contract\n")
     conditions = spec.get("conditions", [])
@@ -221,6 +236,7 @@ def render_task_md(spec: dict[str, Any]) -> str:
 def render_params_yaml(spec: dict[str, Any]) -> str:
     doc: dict[str, Any] = {
         "claim_id": spec["claim_id"],
+        "spec_hash": spec["spec_hash"],
         "parameter_policy": {
             "paper_specified": "Must not be changed silently.",
             "author_repo_config": "Use if recovered from released code/config; record source.",
@@ -263,6 +279,7 @@ def render_protocol_yaml(spec: dict[str, Any]) -> str:
         "protocol_version": 0.1,
         "task_id": task_id_for(spec),
         "claim_id": spec["claim_id"],
+        "spec_hash": spec["spec_hash"],
         "workspace_contract": {
             "exposure": spec["exposure_policy"],
             "agent_visible": visible_files(spec),
@@ -304,6 +321,7 @@ def render_expected_json(spec: dict[str, Any]) -> dict[str, Any]:
         primary.append(entry)
     return {
         "claim_id": spec["claim_id"],
+        "spec_hash": spec["spec_hash"],
         "primary_metrics": primary,
         "allowed_verdicts": c["verdicts"],
         "thresholds_hidden": bool(c["hidden_thresholds"]),
@@ -315,6 +333,7 @@ def render_reward_targets_yaml(spec: dict[str, Any]) -> str:
     c = derive_contract(spec)
     doc: dict[str, Any] = {
         "claim_id": spec["claim_id"],
+        "spec_hash": spec["spec_hash"],
         "hidden_from_agent": True,
         "primary_thresholds": {
             metric: {
@@ -396,7 +415,8 @@ def render_task(
         for asset in spec.get("input_files", []):
             src = assets_dir / asset
             if src.is_file():
-                dst = input_dir / Path(asset).name
+                dst = input_dir / asset
+                dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_bytes(src.read_bytes())
 
     return task_dir

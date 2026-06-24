@@ -15,8 +15,11 @@ scratch/
 # build artifacts / run outputs — keep the dir, ignore contents
 /runs/*
 !/runs/.gitkeep
-/datasets/*
-!/datasets/.gitkeep
+# rollout flat-symlink views: build artifact, auto-created by reproducegym.dataset
+/datasets/
+
+# local agent/runtime session state (heartbeat, session id) — not project content
+.claude/state/
 
 # python
 __pycache__/

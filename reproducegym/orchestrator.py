@@ -1,12 +1,12 @@
-"""Main control agent (host-side). Drives the end-to-end reproduction.
+"""Legacy host-side orchestration helpers.
 
-MD paper -> extract claims -> merge into a canonical claim spec -> render a
-ClawGym-pure task -> (baseline) verifier -> consistency gate -> launch a host
-sandbox -> run the reproduction agent (which ssh's to MetaX for GPU) while
-recording the trajectory -> score with the hidden reward.
+The active workflow is intentionally two-stage:
 
-Everything here is light/host-side. Heavy work happens inside the sandbox and on
-remote GPU nodes. The reward/ verifier is never mounted for the agent.
+1. paper -> task bundles: :mod:`reproducegym.pipeline.build_claim_tasks`
+2. task bundle -> run attempt: :mod:`run.py` or ``reproducegym reproduce <task_dir>``
+
+The old paper -> task -> run orchestration entrypoints remain only to raise a
+clear migration error instead of silently building text-only tasks.
 """
 
 from __future__ import annotations
@@ -15,16 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from reproducegym.config import REPO_ROOT
-from reproducegym.pipeline.extract_claims import extract_claims
-from reproducegym.pipeline.merge_claim_spec import merge_claim_spec
-from reproducegym.pipeline.render_check import write_baseline_check
-from reproducegym.pipeline.render_task import render_task
-from reproducegym.pipeline.validate_task import validate_task
-from reproducegym.sandbox.launcher import launch
-from reproducegym.sandbox.run_guard import run_guarded
 from reproducegym.sandbox.runner import RunResult
-from reproducegym.verify import score
 
 
 @dataclass
@@ -68,9 +59,11 @@ def _select_claim(claims: list[dict], claim_id: str | None) -> dict:
     if claim_id is None:
         return claims[0]
     for c in claims:
-        if c.get("claim_id") == claim_id:
+        if c.get("claim_id") == claim_id or c.get("source_claim_id") == claim_id:
             return c
-    raise ReproduceError(f"claim_id {claim_id!r} not found; have {[c.get('claim_id') for c in claims]}")
+    have = [c.get("claim_id") for c in claims]
+    legacy = [c.get("source_claim_id") for c in claims if c.get("source_claim_id")]
+    raise ReproduceError(f"claim_id {claim_id!r} not found; have {have}; legacy ids {legacy}")
 
 
 def build_task(
@@ -81,44 +74,12 @@ def build_task(
     paper_id: str | None = None,
     work_dir: str | Path | None = None,
     baseline_check: bool = True,
+    figure_evidence: list[dict[str, Any]] | None = None,
 ) -> BuildResult:
-    """Pipeline only: paper MD -> claims -> spec -> rendered task -> validated."""
-    paper_text, derived_id = _read_paper(paper)
-    paper_id = paper_id or derived_id
-
-    if client is None:
-        from reproducegym.models import ClaudeClient
-
-        client = ClaudeClient()
-
-    # 1-2. extract + select
-    claims = extract_claims(paper_text, client=client)
-    claim = _select_claim(claims, claim_id)
-    cid = claim["claim_id"]
-
-    # 3. merge into canonical spec (single source of truth)
-    build_root = Path(work_dir) if work_dir is not None else REPO_ROOT / "runs" / paper_id
-    claims_dir = build_root / "claims"
-    task_dir = build_root / "tasks" / cid
-    spec = merge_claim_spec(claim, paper_id=paper_id, out_path=claims_dir / f"{cid}.yaml")
-
-    # 4. render task (ClawGym-pure) + baseline verifier
-    render_task(spec, task_dir)
-    if baseline_check and not (task_dir / "reward" / "check.py").exists():
-        write_baseline_check(spec, task_dir / "reward")
-
-    # 5. consistency gate
-    problems = validate_task(task_dir, spec)
-    if problems:
-        raise ReproduceError("task failed validation: " + "; ".join(problems))
-
-    return BuildResult(
-        paper_id=paper_id,
-        claim_id=cid,
-        claim_spec=spec,
-        claim_spec_path=claims_dir / f"{cid}.yaml",
-        task_dir=task_dir,
-        validation=problems,
+    """Disabled legacy paper -> task helper."""
+    raise ReproduceError(
+        "orchestrator.build_task is disabled. Use build_claim_tasks.py or "
+        "reproducegym build for the paper -> task stage."
     )
 
 
@@ -140,39 +101,8 @@ def reproduce(
     baseline_check: bool = True,
     do_score: bool = True,
 ) -> ReproduceResult:
-    b = build_task(
-        paper,
-        claim_id,
-        client=client,
-        paper_id=paper_id,
-        work_dir=work_dir,
-        baseline_check=baseline_check,
-    )
-
-    # 6-7. launch host sandbox + run agent + record trajectory. The run guard
-    # always reclaims provisioned (e.g. Bohrium) compute, even on error/timeout.
-    runtime = launch(
-        b.task_dir,
-        run_dir,
-        backend=backend,
-        sandbox=sandbox,
-        metax_nodes=metax_nodes,
-        compute=compute,
-        node=node,
-    )
-    rr = run_guarded(runtime, timeout=timeout, runner=lbg_runner)
-
-    # 8. hidden scoring
-    reward = score(b.task_dir, runtime.workspace) if do_score else None
-
-    return ReproduceResult(
-        paper_id=b.paper_id,
-        claim_id=b.claim_id,
-        claim_spec=b.claim_spec,
-        claim_spec_path=b.claim_spec_path,
-        task_dir=b.task_dir,
-        run_result=rr,
-        trajectory_path=rr.trajectory_path,
-        reward=reward,
-        validation=b.validation,
+    """Disabled legacy paper -> task -> run helper."""
+    raise ReproduceError(
+        "orchestrator.reproduce is disabled. Build tasks first, then run a rendered "
+        "task with run.py or reproducegym reproduce <task_dir>."
     )

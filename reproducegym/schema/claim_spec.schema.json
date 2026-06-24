@@ -2,15 +2,39 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://reproducegym/schema/claim_spec.schema.json",
   "title": "ReproduceGym Claim Spec",
-  "description": "Canonical single source of truth for ONE reproducible claim. This file (sandboxes/<paper>/claims/<claim_id>.yaml) is also the human-readable, git-reviewed record — it REPLACES the legacy private/targets.yaml. All agent-visible sandbox-task artifacts (task.md, params.yaml, protocol.yaml, expected.json, data_entry.json) are deterministically RENDERED from it by render_task.py; only reward/check.py is hand/agent-authored. The rendered task is ClawGym-pure: {data_entry.json, input_files/, reward/} with NO private/ (ClawGym copies only reward/ at scoring). Every leaf carries an `exposure` so the renderer routes it to input_files/ (visible) or reward/ (hidden). DRAFT — field set is expected to evolve.",
+  "description": "Canonical single source of truth for ONE reproducible claim. This file (runs/<paper>/02-spec/<claim_id>.yaml) is also the human-readable record — it REPLACES the legacy private/targets.yaml. All agent-visible sandbox-task artifacts (task.md, params.yaml, protocol.yaml, expected.json, data_entry.json) are deterministically RENDERED from it by render_task.py; only reward/check.py is hand/agent-authored. The rendered task is ClawGym-pure: {data_entry.json, input_files/, reward/} with NO private/ (ClawGym copies only reward/ at scoring). Every leaf carries an `exposure` so the renderer routes it to input_files/ (visible) or reward/ (hidden). DRAFT — field set is expected to evolve.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["claim_id", "paper_id", "claim_type", "tier", "exposure_policy", "statement", "verifiability", "metrics", "thresholds", "required_outputs", "verdict_rules"],
+  "required": ["claim_id", "claim_num", "claim_slug", "display_title", "importance_rank", "spec_hash", "paper_id", "claim_type", "tier", "exposure_policy", "statement", "verifiability", "metrics", "thresholds", "required_outputs", "verdict_rules"],
   "properties": {
     "claim_id": {
       "type": "string",
-      "description": "Stable id, unique within the paper, e.g. c1_std_bias.",
+      "description": "Stable id, unique within the paper, e.g. c001_std_bias.",
       "pattern": "^[a-z0-9_]+$"
+    },
+    "claim_num": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Unique numeric id within the paper, assigned in importance order."
+    },
+    "claim_slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Readable slug portion of claim_id."
+    },
+    "display_title": {
+      "type": "string",
+      "description": "Short human-readable title for manifests and reports."
+    },
+    "importance_rank": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1 = most important / preferred first task."
+    },
+    "spec_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8,64}$",
+      "description": "Hash of task-affecting canonical spec content; used to align task/run versions."
     },
     "paper_id": {
       "type": "string",
@@ -102,6 +126,9 @@
             "enum": ["paper_specified", "author_repo_config", "paper_unspecified"],
             "description": "Drives strict vs approximate reproduction."
           },
+          "use": {"type": "string", "enum": ["reproduction_param", "target", "context"]},
+          "confidence": {"type": "number"},
+          "read_from": {"type": "string"},
           "applies_to_claim": {"type": "boolean", "default": true, "description": "Whether this param is relevant to THIS claim."},
           "local_substitute_allowed": {"type": "boolean", "description": "If paper_unspecified, may the agent substitute a local value?"},
           "affects_strict_reproduction": {"type": "boolean", "description": "Whether substituting/missing this blocks a strict verdict."},
@@ -176,6 +203,28 @@
       "type": "array",
       "description": "Extra agent-visible assets to copy into input_files/ beyond rendered contracts (e.g. paper.md, figures/, starter/).",
       "items": {"type": "string"}
+    },
+    "figure_dependencies": {
+      "type": "array",
+      "description": "Figure evidence bound to this claim, normalized from Qwen-VL output and anchors.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["figure_ref"],
+        "properties": {
+          "figure_ref": {"type": "string"},
+          "image_file": {"type": "string"},
+          "caption": {"type": "string"},
+          "context": {"type": "string"},
+          "claim_relevance": {"type": "string"},
+          "params": {"type": "array"},
+          "targets": {"type": "array"},
+          "axis_ranges": {"type": "object"},
+          "conditions": {"type": "array"},
+          "confidence": {"type": "number"},
+          "read_from": {"type": "string"}
+        }
+      }
     }
   }
 }

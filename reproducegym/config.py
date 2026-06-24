@@ -26,7 +26,7 @@ def _unquote(value: str) -> str:
 
 
 def parse_env_text(text: str) -> dict[str, str]:
-    """Parse .env text into a dict, resolving ${VAR} references within the file."""
+    """Parse .env text into a dict, resolving ${VAR} references within the file only."""
     out: dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
@@ -40,9 +40,28 @@ def parse_env_text(text: str) -> dict[str, str]:
         if raw and raw[0] not in {'"', "'"}:
             raw = raw.split(" #", 1)[0].rstrip()
         value = _unquote(raw)
-        value = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", lambda g: out.get(g.group(1), os.environ.get(g.group(1), "")), value)
+        value = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", lambda g: out.get(g.group(1), ""), value)
         out[key] = value
     return out
+
+
+def dotenv_values(path: str | Path | None = None) -> dict[str, str]:
+    """Read .env as plain text without consulting or mutating process env."""
+    env_path = Path(path) if path is not None else DEFAULT_ENV_PATH
+    if not env_path.is_file():
+        return {}
+    return parse_env_text(env_path.read_text(encoding="utf-8"))
+
+
+def get_dotenv(key: str, default: str | None = None, *, path: str | Path | None = None) -> str | None:
+    return dotenv_values(path).get(key, default)
+
+
+def require_dotenv(key: str, *, path: str | Path | None = None) -> str:
+    value = get_dotenv(key, path=path)
+    if not value:
+        raise RuntimeError(f"required .env key {key!r} is not set (check {Path(path) if path else DEFAULT_ENV_PATH})")
+    return value
 
 
 def load_dotenv(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]:
@@ -53,7 +72,7 @@ def load_dotenv(path: str | Path | None = None, *, override: bool = False) -> di
     env_path = Path(path) if path is not None else DEFAULT_ENV_PATH
     if not env_path.is_file():
         return {}
-    parsed = parse_env_text(env_path.read_text(encoding="utf-8"))
+    parsed = dotenv_values(env_path)
     for key, value in parsed.items():
         if override or key not in os.environ:
             os.environ[key] = value

@@ -24,7 +24,7 @@ strong agent on the sandbox and have the verifier return a scalar reward.
 Read the whole paper (body, figures, tables, ablations, appendix). For each
 claim record: claim_id, statement, anchors, `claim_type`, required experiments,
 metrics, `requires_training`, `cost`, `verifiability`, text params (with
-status), notes. Figure-only numbers come from the Qwen-VL pass.
+status), notes. Figure-only numbers come from the multimodal figure pass.
 
 ## 2. Triage → see `claim_triage.md`
 

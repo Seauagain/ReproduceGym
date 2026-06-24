@@ -20,6 +20,7 @@ from reproducegym.compute.providers import ComputeProvider, LbgProvider
 from reproducegym.compute.sources import load_inventory
 from reproducegym.config import REPO_ROOT
 from reproducegym.metax import MetaxNode, install_compute_access, load_metax_config, load_nodes
+from reproducegym.runlayout import PaperLayout
 from reproducegym.sandbox.backends import AgentBackend, get_backend
 from reproducegym.sandbox.sandbox import LocalSandbox, Sandbox
 from reproducegym.sandbox.workspace import prepare_workspace
@@ -39,7 +40,12 @@ class Runtime:
     run_tag: str = ""
 
 
-def _default_run_dir(task_id: str) -> Path:
+def _default_run_dir(task_dir: Path, task_id: str) -> Path:
+    """Nest the attempt under the paper layout (04-run/<claim>/NNN) when the task
+    dir follows the layout; otherwise fall back to a flat timestamped dir."""
+    layout = PaperLayout.from_task_dir(task_dir)
+    if layout is not None:
+        return layout.next_run_dir(task_id)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return REPO_ROOT / "runs" / f"{task_id}-{stamp}"
 
@@ -76,7 +82,7 @@ def launch(
     data_entry = json.loads((task_dir / "data_entry.json").read_text(encoding="utf-8"))
     task_id = data_entry.get("task_id", task_dir.name)
 
-    run_dir = Path(run_dir) if run_dir is not None else _default_run_dir(task_id)
+    run_dir = Path(run_dir) if run_dir is not None else _default_run_dir(task_dir, task_id)
     run_dir.mkdir(parents=True, exist_ok=True)
     workspace = prepare_workspace(task_dir, run_dir / "workspace", clean=clean)
 

@@ -227,6 +227,43 @@ def test_direction_target_conflict_is_not_selected_for_rlvr():
     assert "reward curve" in report[0]["verification"]["reason"]
 
 
+def test_near_zero_delta_claim_uses_synthesized_lower_direction():
+    claim = _refined_claim(
+        statement="ArXiv papers produce no notable improvement.",
+        verification_contract={
+            "type": "numeric_threshold",
+            "conditions": [{"label": "arxiv", "description": "arxiv data"}],
+            "metrics": [
+                {
+                    "name": "max_delta_across_benchmarks",
+                    "formula": "max(delta)",
+                    "direction": "higher_is_better",
+                }
+            ],
+            "params": [],
+            "thresholds": [
+                {
+                    "metric": "max_delta_across_benchmarks",
+                    "pass_threshold": 1.0,
+                    "target_value": 0.0,
+                    "tolerance_abs": 1.0,
+                    "rationale": "No notable improvement: maximum delta should be <= 1 percentage point.",
+                    "source": "Table 8",
+                    "target_evidence": {"source": "Table 8"},
+                }
+            ],
+            "verdict_rules": {},
+        },
+    )
+
+    report = build_claim_verification_report([claim])
+
+    assert report[0]["verification"]["pool"] == "rlvr"
+    curve = report[0]["reward_curves"]["max_delta_across_benchmarks"]
+    assert curve["direction"] == "lower_is_better"
+    assert curve["points"][-1] == {"value": 0.0, "reward": 1.0}
+
+
 def test_final_claim_id_assignment_preserves_claim_uid_and_contract_hash():
     refined = [_refined_claim(statement="Z claim")]
     report = build_claim_verification_report(refined)

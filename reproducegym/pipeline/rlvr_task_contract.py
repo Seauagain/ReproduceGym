@@ -194,8 +194,16 @@ def _report_for_claim(claim: dict[str, Any]) -> dict[str, Any]:
     spec_like = apply_verification_contract(_contract_to_spec_like(claim))
     verification = dict(spec_like.get("verification") or {})
     accepted_targets = list(spec_like.get("thresholds") or [])
-    reward_curves = reward_curves_from_thresholds(claim, accepted_targets)
-    contract_hash = compute_contract_hash(claim, accepted_targets=accepted_targets)
+    reward_curves = reward_curves_from_thresholds(spec_like, accepted_targets)
+    hash_claim = {
+        **claim,
+        "verification_contract": {
+            **_verification_contract(claim),
+            "metrics": copy.deepcopy(spec_like.get("metrics") or []),
+            "thresholds": copy.deepcopy(accepted_targets),
+        },
+    }
+    contract_hash = compute_contract_hash(hash_claim, accepted_targets=accepted_targets)
     formula_problems = formulas_problem(spec_like.get("metrics") or [])
     metric_names = [
         str(metric.get("name"))
@@ -251,6 +259,8 @@ def _report_for_claim(claim: dict[str, Any]) -> dict[str, Any]:
         "likely_pool": claim.get("likely_pool"),
         "verification": verification,
         "buildable": not formula_problems,
+        "metrics": copy.deepcopy(spec_like.get("metrics") or []),
+        "diagnostic_metrics": copy.deepcopy(spec_like.get("diagnostic_metrics") or []),
         "accepted_targets": accepted_targets,
         "reward_curves": reward_curves,
         "rejected_targets": [],
@@ -291,7 +301,16 @@ def _merge_report_fields(claim: dict[str, Any], report_item: dict[str, Any]) -> 
     out = ensure_claim_uid(claim)
     out["contract_hash"] = report_item["contract_hash"]
     out["verification"] = copy.deepcopy(report_item.get("verification") or {})
+    if report_item.get("metrics") is not None:
+        out["metrics"] = copy.deepcopy(report_item.get("metrics") or [])
+    if report_item.get("diagnostic_metrics"):
+        out["diagnostic_metrics"] = copy.deepcopy(report_item.get("diagnostic_metrics") or [])
     out["accepted_targets"] = copy.deepcopy(report_item.get("accepted_targets") or [])
+    contract = copy.deepcopy(out.get("verification_contract") or {})
+    if report_item.get("metrics") is not None:
+        contract["metrics"] = copy.deepcopy(report_item.get("metrics") or [])
+    contract["thresholds"] = copy.deepcopy(out["accepted_targets"])
+    out["verification_contract"] = contract
     out["reward_curves"] = copy.deepcopy(report_item.get("reward_curves") or {})
     out["selection_rationale"] = report_item.get("selection_rationale")
     return out

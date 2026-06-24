@@ -36,7 +36,17 @@ RLVR_MODES = {"numeric_threshold", "directional", "structural"}
 
 # Tokens that mark a value as a *relative/derived* quantity (a ratio between
 # conditions, a reduction, a delta) rather than an absolute metric magnitude.
-RELATIVE_TOKENS = ("ratio", "relative", "reduction", "delta", "speedup")
+RELATIVE_TOKENS = (
+    "ratio",
+    "relative",
+    "reduction",
+    "delta",
+    "difference",
+    "minus",
+    "improvement",
+    "gap",
+    "speedup",
+)
 
 
 def _norm_name(value: str) -> str:
@@ -158,6 +168,11 @@ def _semantic_bind_score(param: dict[str, Any], metric: dict[str, Any]) -> int:
         score += 6
     if {"accuracy", "score"} & p_tokens and {"accuracy", "score", "difference"} & m_tokens:
         score += 2
+    if {"difference", "minus", "improvement", "gap"} & p_tokens and {"difference", "minus", "gap"} & m_tokens:
+        score += 3
+    for token in p_tokens:
+        if token in m_tokens and token in {"gsm8k", "math", "mmlu", "minif2f", "grpo", "online", "rft", "ps", "os"}:
+            score += 2
     return score
 
 
@@ -311,6 +326,61 @@ def _directional_threshold(metric: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _lower_is_better_zero_cue(metric: dict[str, Any], threshold: dict[str, Any]) -> bool:
+    blob = _text_blob(
+        metric.get("name"),
+        metric.get("formula"),
+        threshold.get("rationale"),
+        threshold.get("source"),
+        threshold.get("target_evidence"),
+    )
+    return (
+        any(token in blob for token in ("no notable", "near zero", "negligible", "ineffective", "overlap", "within", "<=", "at most"))
+        and any(token in blob for token in ("delta", "difference", "gap", "abs(", "improvement"))
+    )
+
+
+def _normalize_threshold_metric_direction(
+    metric: dict[str, Any],
+    threshold: dict[str, Any],
+) -> dict[str, Any]:
+    target = _numeric(threshold.get("target_value"))
+    pass_threshold = _numeric(threshold.get("pass_threshold"))
+    if target is None or pass_threshold is None:
+        return metric
+    direction = str(metric.get("direction") or "higher_is_better")
+    if direction == "higher_is_better" and pass_threshold > target and _lower_is_better_zero_cue(metric, threshold):
+        out = dict(metric)
+        out["direction"] = "lower_is_better"
+        return out
+    return metric
+
+
+def _infer_zero_target_threshold(
+    threshold: dict[str, Any],
+    *,
+    metric: dict[str, Any],
+) -> dict[str, Any]:
+    if threshold.get("target_value") is not None:
+        return threshold
+    if str(metric.get("direction") or "") != "lower_is_better":
+        return threshold
+    pass_threshold = _numeric(threshold.get("pass_threshold"))
+    if pass_threshold is None or pass_threshold <= 0:
+        return threshold
+    if not _lower_is_better_zero_cue(metric, threshold):
+        return threshold
+    out = dict(threshold)
+    out["target_value"] = 0.0
+    out["tolerance_abs"] = pass_threshold
+    out.setdefault("target_evidence", {"source": threshold.get("source") or "near-zero difference claim"})
+    out.setdefault(
+        "rationale",
+        "near-zero lower-is-better difference target inferred from paper overlap/no-effect claim",
+    )
+    return out
+
+
 def _bind_targets(
     params: list[dict[str, Any]],
     metrics: list[dict[str, Any]],
@@ -382,6 +452,21 @@ def apply_verification_contract(spec: dict[str, Any]) -> dict[str, Any]:
     metric_names = list(metric_by_name)
 
     thresholds = [dict(t) for t in out.get("thresholds") or []]
+    for threshold in thresholds:
+        metric_name = threshold.get("metric")
+        if metric_name in metric_by_name:
+            metric_by_name[str(metric_name)] = _normalize_threshold_metric_direction(
+                metric_by_name[str(metric_name)],
+                threshold,
+            )
+    metrics = [metric_by_name[str(m["name"])] for m in metrics if m.get("name") in metric_by_name]
+    out["metrics"] = metrics
+    thresholds = [
+        _infer_zero_target_threshold(threshold, metric=metric_by_name[str(threshold["metric"])])
+        if threshold.get("metric") in metric_by_name
+        else threshold
+        for threshold in thresholds
+    ]
     seen = {t.get("metric") for t in thresholds}
 
     # 1) Bind hidden numeric target params -> numeric thresholds (guarded).

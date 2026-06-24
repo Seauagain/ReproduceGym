@@ -209,3 +209,112 @@ def test_binds_dr_grpo_fig5_panel_targets_to_ratio_metrics(valid_claim_spec):
         (threshold["metric"], threshold["target_value"])
         for threshold in out["thresholds"]
     } == {("overall_length_ratio", 0.5), ("incorrect_length_ratio", 0.55)}
+
+
+def test_binds_difference_targets_to_minus_metrics(valid_claim_spec):
+    spec = copy.deepcopy(valid_claim_spec)
+    spec["metrics"] = [
+        {
+            "name": "gsm8k_grpo_ps_minus_grpo_os",
+            "formula": "mean(grpo_ps.gsm8k_acc) - mean(grpo_os.gsm8k_acc)",
+            "direction": "higher_is_better",
+        },
+        {
+            "name": "math_grpo_ps_minus_grpo_os",
+            "formula": "mean(grpo_ps.math_acc) - mean(grpo_os.math_acc)",
+            "direction": "higher_is_better",
+        },
+    ]
+    spec["thresholds"] = []
+    spec["verdict_rules"] = {}
+    spec["params"] = [
+        {
+            "name": "gsm8k_accuracy_difference_grpo_ps_vs_grpo_os",
+            "value": 1.0,
+            "source": "Fig. 5",
+            "status": "paper_specified",
+            "use": "target",
+            "metric": "accuracy_difference",
+            "condition": "GRPO+PS vs GRPO+OS on GSM8K",
+        },
+        {
+            "name": "math_accuracy_difference_grpo_ps_vs_grpo_os",
+            "value": 0.5,
+            "source": "Fig. 5",
+            "status": "paper_specified",
+            "use": "target",
+            "metric": "accuracy_difference",
+            "condition": "GRPO+PS vs GRPO+OS on MATH",
+        },
+    ]
+
+    out = apply_verification_contract(spec)
+
+    assert out["verification"]["pool"] == "rlvr"
+    assert {
+        (threshold["metric"], threshold["target_value"])
+        for threshold in out["thresholds"]
+    } == {("gsm8k_grpo_ps_minus_grpo_os", 1.0), ("math_grpo_ps_minus_grpo_os", 0.5)}
+
+
+def test_near_zero_delta_threshold_corrects_direction(valid_claim_spec):
+    spec = copy.deepcopy(valid_claim_spec)
+    spec["metrics"] = [
+        {
+            "name": "max_delta_across_benchmarks",
+            "formula": "max(delta)",
+            "direction": "higher_is_better",
+        }
+    ]
+    spec["thresholds"] = [
+        {
+            "metric": "max_delta_across_benchmarks",
+            "pass_threshold": 1.0,
+            "target_value": 0.0,
+            "tolerance_abs": 1.0,
+            "rationale": "No notable improvement: maximum delta should be <= 1 percentage point.",
+            "source": "Table 8",
+        }
+    ]
+    spec["verdict_rules"] = {}
+    spec["params"] = []
+
+    out = apply_verification_contract(spec)
+
+    assert out["verification"]["pool"] == "rlvr"
+    assert out["metrics"][0]["direction"] == "lower_is_better"
+
+
+def test_lower_is_better_difference_threshold_infers_zero_target(valid_claim_spec):
+    spec = copy.deepcopy(valid_claim_spec)
+    spec["metrics"] = [
+        {
+            "name": "pass256_difference_gsm8k",
+            "formula": "abs(mean(rl.pass_at_256) - mean(sft.pass_at_256))",
+            "direction": "lower_is_better",
+        },
+        {
+            "name": "maj256_improvement_gsm8k",
+            "formula": "mean(rl.maj_at_256) - mean(sft.maj_at_256)",
+            "direction": "higher_is_better",
+        },
+    ]
+    spec["thresholds"] = [
+        {
+            "metric": "pass256_difference_gsm8k",
+            "pass_threshold": 2.0,
+            "exposure": "hidden",
+            "rationale": "Pass@K curves overlap; absolute difference should be within 2 points.",
+            "source": "Figure 7",
+        }
+    ]
+    spec["verdict_rules"] = {}
+    spec["params"] = []
+
+    out = apply_verification_contract(spec)
+
+    assert out["verification"]["pool"] == "rlvr"
+    assert [metric["name"] for metric in out["metrics"]] == ["pass256_difference_gsm8k"]
+    assert out["thresholds"][0]["target_value"] == 0.0
+    assert out["thresholds"][0]["tolerance_abs"] == 2.0
+    assert out["diagnostic_metrics"][0]["name"] == "maj256_improvement_gsm8k"

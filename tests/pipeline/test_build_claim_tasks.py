@@ -10,9 +10,12 @@ import reproducegym.config as config
 from reproducegym.models import multimodal_figure_configured
 from reproducegym.pipeline.build_claim_tasks import (
     _resolve_paper_input,
+    _normalize_conditions,
     _normalize_claim_type,
+    _normalize_refined_claim,
     _normalize_params,
     _normalize_thresholds,
+    _verification_contract_from_claim,
     build_claim_tasks,
     should_parse_images,
 )
@@ -162,6 +165,76 @@ def test_param_normalizer_accepts_llm_shapes():
             "confidence": 0.85,
         }
     ]
+
+
+def test_condition_normalizer_coerces_string_switches():
+    conditions = _normalize_conditions(
+        [
+            {
+                "label": "distill_qwen_1_5b",
+                "description": "distilled model",
+                "switches": "model=='DeepSeek-R1-Distill-Qwen-1.5B' and benchmark=='AIME_2024'",
+            }
+        ]
+    )
+
+    assert conditions == [
+        {
+            "label": "distill_qwen_1_5b",
+            "description": "distilled model",
+            "switches": {
+                "expression": "model=='DeepSeek-R1-Distill-Qwen-1.5B' and benchmark=='AIME_2024'"
+            },
+        }
+    ]
+
+
+def test_contract_normalizer_sanitizes_formula_identifiers():
+    contract = _verification_contract_from_claim(
+        {
+            "conditions": [
+                {"label": "Oat-Zero-7B", "description": "Oat"},
+                {"label": "4shot", "description": "four shot"},
+            ],
+            "metrics": [
+                {
+                    "name": "aime_2024_accuracy",
+                    "formula": "mean(Oat-Zero-7B.AIME2024_accuracy)",
+                    "direction": "higher_is_better",
+                },
+                {
+                    "name": "4shot_avg",
+                    "formula": "mean(4shot.accuracy)",
+                    "direction": "higher_is_better",
+                },
+            ],
+        }
+    )
+
+    assert contract["conditions"][0]["label"] == "oat_zero_7b"
+    assert contract["conditions"][0]["source_label"] == "Oat-Zero-7B"
+    assert contract["conditions"][1]["label"] == "c_4shot"
+    assert contract["metrics"][0]["formula"] == "mean(oat_zero_7b.AIME2024_accuracy)"
+    assert contract["metrics"][1]["name"] == "m_4shot_avg"
+    assert contract["metrics"][1]["formula"] == "mean(c_4shot.accuracy)"
+
+
+def test_normalize_refined_claim_preserves_evidence_uid():
+    bundle = {
+        "claim_uid": "clm_original",
+        "figure_evidence": [],
+    }
+    refined = {
+        "claim_uid": "clm_original",
+        "statement": "Refined wording changes without changing evidence identity.",
+        "evidence_anchors": [{"kind": "figure", "ref": "Fig. 5"}],
+        "metrics": [{"name": "score", "formula": "mean(run.score)", "direction": "higher_is_better"}],
+        "thresholds": [{"metric": "score", "pass_threshold": 0.7, "target_value": 0.8, "source": "Fig. 5"}],
+    }
+
+    out = _normalize_refined_claim(refined, bundle)
+
+    assert out["claim_uid"] == "clm_original"
 
 
 def test_claim_type_normalizer_maps_verifier_type_to_eval_only():

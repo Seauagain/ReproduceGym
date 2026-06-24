@@ -55,7 +55,7 @@ def compute_claim_uid(claim: dict[str, Any], *, length: int = HASH_LEN) -> str:
 
 def ensure_claim_uid(claim: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(claim)
-    out["claim_uid"] = compute_claim_uid(out)
+    out["claim_uid"] = str(out.get("claim_uid") or compute_claim_uid(out))
     return out
 
 

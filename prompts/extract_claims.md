@@ -58,6 +58,11 @@ Strict JSON, a list of claim objects. No prose outside JSON.
   be auditable back to a figure/table/section and enough local context for a human
   to re-read it.
 - Favour claims where a metric can be recomputed from agent-produced logs.
+- Use verifier-safe snake_case identifiers in `conditions[].label`,
+  `metrics[].name`, and `metrics[].formula`: start with a letter or underscore and
+  use only letters, digits, and underscores. Do not emit labels like
+  `Oat-Zero-7B`, `4shot`, or `clip_0.2` inside formulas; write
+  `oat_zero_7b`, `c_4shot`, or `clip_0_2` instead.
 - Do not mark a claim `verification.pool="rlvr"` unless every primary metric has
   an executable threshold or directional rule. A qualitative claim without such a
   rule belongs in `exploration`.

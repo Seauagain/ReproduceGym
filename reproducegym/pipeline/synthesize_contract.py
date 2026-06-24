@@ -99,21 +99,92 @@ def _target_is_relative(param: dict[str, Any]) -> bool:
     return _has_relative_token(param.get("name")) or _has_relative_token(param.get("read_from"))
 
 
-def _bind_metric(param: dict[str, Any], metrics: list[dict[str, Any]]) -> tuple[str | None, bool]:
-    """Return (metric_name, is_explicit). Explicit means the param named the metric."""
+def _tokens(value: Any) -> set[str]:
+    text = str(value or "").lower()
+    raw = [tok for tok in re.split(r"[^a-z0-9]+", text) if tok]
+    synonyms = {
+        "output": "response",
+        "outputs": "response",
+        "avg": "average",
+        "benchmark": "score",
+        "pass1": "accuracy",
+        "pass": "accuracy",
+    }
+    out = {synonyms.get(tok, tok) for tok in raw}
+    if "length" in out:
+        out.add("response_length")
+    if "incorrect" in out:
+        out.add("wrong")
+    if "correct" in out:
+        out.add("right")
+    return out
+
+
+def _text_blob(*values: Any) -> str:
+    return " ".join(str(v or "") for v in values).lower()
+
+
+def _metric_blob(metric: dict[str, Any]) -> str:
+    return _text_blob(metric.get("name"), metric.get("formula"), metric.get("direction"))
+
+
+def _semantic_bind_score(param: dict[str, Any], metric: dict[str, Any]) -> int:
+    p_blob = _text_blob(
+        param.get("name"),
+        param.get("metric"),
+        param.get("condition"),
+        param.get("read_from"),
+        param.get("source"),
+    )
+    m_blob = _metric_blob(metric)
+    p_tokens = _tokens(p_blob)
+    m_tokens = _tokens(m_blob)
+    score = len(p_tokens & m_tokens)
+    if "length" in p_tokens and "length" in m_tokens and "ratio" in m_tokens:
+        score += 3
+    if "incorrect" in p_tokens and "incorrect" in m_tokens:
+        score += 5
+    elif "incorrect" in p_tokens and "incorrect" not in m_tokens:
+        score -= 4
+    if "correct" in p_tokens and "correct" in m_tokens:
+        score += 3
+    elif "correct" in p_tokens and "incorrect" in m_tokens:
+        score -= 4
+    if ("panel 2" in p_blob or "plot 2" in p_blob or "subplot 2" in p_blob) and (
+        "overall" in m_tokens or "mean_response_length" in m_blob
+    ):
+        score += 6
+    if ("panel 4" in p_blob or "plot 4" in p_blob or "subplot 4" in p_blob) and "incorrect" in m_tokens:
+        score += 6
+    if {"accuracy", "score"} & p_tokens and {"accuracy", "score", "difference"} & m_tokens:
+        score += 2
+    return score
+
+
+def _bind_metric(param: dict[str, Any], metrics: list[dict[str, Any]]) -> tuple[str | None, bool, int]:
+    """Return (metric_name, is_explicit, score). Explicit means the param named the metric."""
     metric_names = [str(m["name"]) for m in metrics if m.get("name")]
     explicit = param.get("metric")
     if explicit in metric_names:
-        return str(explicit), True
+        return str(explicit), True, 100
     if len(metric_names) == 1:
-        return metric_names[0], False
+        return metric_names[0], False, 1
 
     target_name = _norm_name(str(param.get("name", "")))
     for name in metric_names:
         norm = _norm_name(name)
         if norm and (norm in target_name or target_name in norm):
-            return name, False
-    return None, False
+            return name, False, 20
+
+    scored = [
+        (str(metric["name"]), _semantic_bind_score(param, metric))
+        for metric in metrics
+        if metric.get("name")
+    ]
+    scored.sort(key=lambda item: item[1], reverse=True)
+    if scored and scored[0][1] >= 5 and (len(scored) == 1 or scored[0][1] > scored[1][1]):
+        return scored[0][0], False, scored[0][1]
+    return None, False, 0
 
 
 def _rel_tolerance(param: dict[str, Any]) -> float:
@@ -150,7 +221,7 @@ def _threshold_for_target(
     *,
     metric: dict[str, Any],
 ) -> dict[str, Any] | None:
-    target = _numeric(param.get("value"))
+    target = _target_value_for_metric(param, metric)
     if target is None:
         return None
     rel_tol = _rel_tolerance(param)
@@ -181,6 +252,18 @@ def _threshold_for_target(
         "tolerance": {"rel": rel_tol},
     }
     return {k: v for k, v in threshold.items() if v is not None}
+
+
+def _target_value_for_metric(param: dict[str, Any], metric: dict[str, Any]) -> float | None:
+    target = _numeric(param.get("value"))
+    if _metric_is_relative(metric):
+        text = _text_blob(param.get("read_from"), param.get("name"), param.get("metric"))
+        matches = re.findall(r"(?:ratio|relative(?:\\s+height)?|dr\\.?\\s*grpo\\s*/\\s*grpo)[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)", text)
+        candidates = [_numeric(m) for m in matches]
+        candidates = [c for c in candidates if c is not None and 0 < c <= 5]
+        if candidates:
+            return float(candidates[-1])
+    return target
 
 
 def _neutral_point(metric: dict[str, Any]) -> float | None:
@@ -238,7 +321,7 @@ def _bind_targets(
 
     Returns (metric -> chosen param, rejection_reasons).
     """
-    per_metric: dict[str, list[tuple[dict[str, Any], bool]]] = {}
+    per_metric: dict[str, list[tuple[dict[str, Any], bool, int]]] = {}
     rejected: list[str] = []
 
     for param in params:
@@ -246,7 +329,7 @@ def _bind_targets(
             continue
         if _numeric(param.get("value")) is None:
             continue
-        metric_name, explicit = _bind_metric(param, metrics)
+        metric_name, explicit, score = _bind_metric(param, metrics)
         if not metric_name:
             rejected.append(f"target {param.get('name')!r} did not bind to any metric")
             continue
@@ -258,21 +341,24 @@ def _bind_targets(
                 f"metric {metric_name!r}"
             )
             continue
-        per_metric.setdefault(metric_name, []).append((param, explicit))
+        per_metric.setdefault(metric_name, []).append((param, explicit, score))
 
     bindings: dict[str, dict[str, Any]] = {}
     for metric_name, candidates in per_metric.items():
-        explicit = [p for p, is_explicit in candidates if is_explicit]
+        candidates = sorted(candidates, key=lambda item: item[2], reverse=True)
+        explicit = [p for p, is_explicit, _ in candidates if is_explicit]
         if explicit:
             bindings[metric_name] = explicit[0]
             continue
-        distinct = {_numeric(p.get("value")) for p, _ in candidates}
+        best_score = candidates[0][2]
+        best = [p for p, _, score in candidates if score == best_score]
+        distinct = {_target_value_for_metric(p, metric_by_name[metric_name]) for p in best}
         if len(distinct) > 1:
             rejected.append(
                 f"metric {metric_name!r} has ambiguous targets {sorted(distinct)}; not bound"
             )
             continue
-        bindings[metric_name] = candidates[0][0]
+        bindings[metric_name] = best[0]
     return bindings, rejected
 
 
@@ -339,6 +425,27 @@ def apply_verification_contract(spec: dict[str, Any]) -> dict[str, Any]:
     if covers_all_metrics and covers_all_targets:
         verification.setdefault("mode", "numeric_threshold")
         verification.setdefault("pool", "rlvr")
+    elif target_metrics:
+        kept = [metric for metric in metrics if metric.get("name") in target_metrics]
+        kept_names = {str(metric["name"]) for metric in kept if metric.get("name")}
+        diagnostic = [metric for metric in metrics if metric.get("name") not in kept_names]
+        out["metrics"] = kept
+        out["diagnostic_metrics"] = diagnostic
+        thresholds = [
+            threshold
+            for threshold in thresholds
+            if threshold.get("metric") in kept_names and threshold.get("target_value") is not None
+        ]
+        out["thresholds"] = thresholds
+        threshold_metrics = [str(t["metric"]) for t in thresholds if t.get("metric") in kept_names]
+        out["verdict_rules"] = _default_verdict_rules(threshold_metrics)
+        verification.setdefault("mode", "numeric_threshold")
+        verification.setdefault("pool", "rlvr")
+        if diagnostic:
+            verification["diagnostic_reason"] = (
+                "ungrounded metric(s) moved to diagnostics: "
+                + ", ".join(str(metric.get("name")) for metric in diagnostic if metric.get("name"))
+            )
     else:
         verification["mode"] = verification.get("mode") or "unverifiable"
         verification["pool"] = "exploration"

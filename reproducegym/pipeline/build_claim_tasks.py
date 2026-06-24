@@ -10,6 +10,7 @@ It never launches a sandbox or a GPU job.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import time
 from pathlib import Path
@@ -402,10 +403,29 @@ def _normalize_claim_type(value: Any) -> str:
 def _verification_contract_from_claim(claim: dict[str, Any]) -> dict[str, Any]:
     contract = dict(claim.get("verification_contract") or {})
     contract.setdefault("type", claim.get("verification", {}).get("mode") or claim.get("likely_pool") or "artifact_metric")
-    contract.setdefault("conditions", list(claim.get("conditions") or []))
-    contract["metrics"] = _normalize_metrics(list(contract.get("metrics") or claim.get("metrics") or []))
-    contract["params"] = _normalize_params(list(contract.get("params") or claim.get("params") or []))
-    contract["thresholds"] = _normalize_thresholds(list(contract.get("thresholds") or claim.get("thresholds") or []))
+    contract["conditions"] = _normalize_conditions(list(contract.get("conditions") or claim.get("conditions") or []))
+    condition_aliases = {
+        str(cond["source_label"]): str(cond["label"])
+        for cond in contract["conditions"]
+        if cond.get("source_label")
+    }
+    contract["metrics"] = _normalize_metrics(
+        list(contract.get("metrics") or claim.get("metrics") or []),
+        condition_aliases=condition_aliases,
+    )
+    metric_aliases = {
+        str(metric["source_name"]): str(metric["name"])
+        for metric in contract["metrics"]
+        if metric.get("source_name")
+    }
+    contract["params"] = _normalize_params(
+        list(contract.get("params") or claim.get("params") or []),
+        metric_aliases=metric_aliases,
+    )
+    contract["thresholds"] = _normalize_thresholds(
+        list(contract.get("thresholds") or claim.get("thresholds") or []),
+        metric_aliases=metric_aliases,
+    )
     contract.setdefault("verdict_rules", dict(claim.get("verdict_rules") or {}))
     return contract
 
@@ -417,14 +437,67 @@ def _normalize_direction(value: Any) -> str:
     return "higher_is_better"
 
 
-def _normalize_metrics(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _safe_identifier(value: Any, *, prefix: str = "c") -> str:
+    text = re.sub(r"[^A-Za-z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    if not text:
+        text = prefix
+    if not re.match(r"^[A-Za-z_]", text):
+        text = f"{prefix}_{text}"
+    return text
+
+
+def _sanitize_formula_refs(formula: str, aliases: dict[str, str]) -> str:
+    out = str(formula or "")
+    for raw, safe in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        if raw and raw != safe:
+            out = out.replace(f"{raw}.", f"{safe}.")
+
+    def repl(match: re.Match[str]) -> str:
+        ref = match.group(1)
+        return _safe_identifier(ref)
+
+    return re.sub(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_-]*|\d[A-Za-z0-9_-]*)(?=\.)", repl, out)
+
+
+def _normalize_conditions(conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for raw in conditions:
+        if not isinstance(raw, dict) or not raw.get("label"):
+            continue
+        raw_label = str(raw["label"])
+        label = _safe_identifier(raw_label)
+        item: dict[str, Any] = {
+            "label": label,
+            "description": str(raw.get("description") or raw_label),
+        }
+        if label != raw_label:
+            item["source_label"] = raw_label
+        switches = raw.get("switches")
+        if isinstance(switches, dict):
+            item["switches"] = {str(k): v for k, v in switches.items()}
+        elif switches is not None:
+            text = str(switches).strip()
+            if text:
+                item["switches"] = {"expression": text}
+        out.append(item)
+    return out
+
+
+def _normalize_metrics(
+    metrics: list[dict[str, Any]],
+    *,
+    condition_aliases: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for raw in metrics:
         if not isinstance(raw, dict) or not raw.get("name"):
             continue
         item = dict(raw)
-        item["name"] = str(item["name"])
-        item["formula"] = str(item.get("formula") or "")
+        raw_name = str(item["name"])
+        item["name"] = _safe_identifier(raw_name, prefix="m")
+        if item["name"] != raw_name:
+            item["source_name"] = raw_name
+        item["formula"] = _sanitize_formula_refs(str(item.get("formula") or ""), condition_aliases or {})
         item["direction"] = _normalize_direction(item.get("direction"))
         out.append(item)
     return out
@@ -458,7 +531,11 @@ def _normalize_target_evidence(value: Any) -> dict[str, Any] | None:
     return out or None
 
 
-def _normalize_thresholds(thresholds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_thresholds(
+    thresholds: list[dict[str, Any]],
+    *,
+    metric_aliases: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for raw in thresholds:
         if not isinstance(raw, dict) or not raw.get("metric"):
@@ -467,7 +544,7 @@ def _normalize_thresholds(thresholds: list[dict[str, Any]]) -> list[dict[str, An
         if pass_threshold is None:
             continue
         item: dict[str, Any] = {
-            "metric": str(raw["metric"]),
+            "metric": (metric_aliases or {}).get(str(raw["metric"]), str(raw["metric"])),
             "pass_threshold": pass_threshold,
             "exposure": raw.get("exposure") if raw.get("exposure") in {"visible", "hidden"} else "hidden",
         }
@@ -505,7 +582,11 @@ def _confidence(value: Any) -> float | None:
     return None
 
 
-def _normalize_params(params: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_params(
+    params: list[dict[str, Any]],
+    *,
+    metric_aliases: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for raw in params:
         if not isinstance(raw, dict) or not raw.get("name"):
@@ -518,9 +599,11 @@ def _normalize_params(params: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         if "value" in raw:
             item["value"] = raw.get("value")
-        for key in ("unit", "source", "read_from", "metric", "condition"):
+        for key in ("unit", "source", "read_from", "condition"):
             if raw.get(key) is not None:
                 item[key] = str(raw[key])
+        if raw.get("metric") is not None:
+            item["metric"] = (metric_aliases or {}).get(str(raw["metric"]), str(raw["metric"]))
         use = raw.get("use")
         if use == "config":
             use = "reproduction_param"
@@ -546,7 +629,8 @@ def _normalize_params(params: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _normalize_refined_claim(claim: dict[str, Any], evidence_bundle: dict[str, Any]) -> dict[str, Any]:
-    out = ensure_claim_uid(claim)
+    out = dict(claim)
+    out["claim_uid"] = str(evidence_bundle.get("claim_uid") or claim.get("claim_uid") or ensure_claim_uid(claim)["claim_uid"])
     out.setdefault("source_mode", claim.get("source_mode") or "global")
     out["claim_type"] = _normalize_claim_type(out.get("claim_type"))
     out.setdefault("evidence_anchors", claim.get("evidence_anchors") or claim.get("anchors") or [])

@@ -136,3 +136,76 @@ def test_ambiguous_targets_not_bound(valid_claim_spec):
     assert out["verification"]["pool"] == "exploration"
     assert "ambiguous" in out["verification"]["reason"]
     assert out["thresholds"] == []
+
+
+def test_prunes_ungrounded_metrics_to_diagnostics(valid_claim_spec):
+    spec = copy.deepcopy(valid_claim_spec)
+    spec["metrics"] = [
+        {"name": "grounded_score", "formula": "mean(run.score)", "direction": "higher_is_better"},
+        {"name": "diagnostic_gap", "formula": "mean(run.score) - mean(base.score)", "direction": "higher_is_better"},
+    ]
+    spec["thresholds"] = []
+    spec["verdict_rules"] = {}
+    spec["params"] = [
+        {
+            "name": "grounded_score_target",
+            "value": 0.8,
+            "source": "Table 1",
+            "status": "paper_specified",
+            "use": "target",
+            "metric": "grounded_score",
+        }
+    ]
+
+    out = apply_verification_contract(spec)
+
+    assert out["verification"]["pool"] == "rlvr"
+    assert [m["name"] for m in out["metrics"]] == ["grounded_score"]
+    assert out["diagnostic_metrics"][0]["name"] == "diagnostic_gap"
+    assert out["thresholds"][0]["metric"] == "grounded_score"
+
+
+def test_binds_dr_grpo_fig5_panel_targets_to_ratio_metrics(valid_claim_spec):
+    spec = copy.deepcopy(valid_claim_spec)
+    spec["metrics"] = [
+        {
+            "name": "overall_length_ratio",
+            "formula": "mean(dr_grpo.mean_response_length) / mean(grpo.mean_response_length)",
+            "direction": "lower_is_better",
+        },
+        {
+            "name": "incorrect_length_ratio",
+            "formula": "mean(dr_grpo.mean_length_incorrect) / mean(grpo.mean_length_incorrect)",
+            "direction": "lower_is_better",
+        },
+    ]
+    spec["thresholds"] = []
+    spec["verdict_rules"] = {}
+    spec["params"] = [
+        {
+            "name": "panel2_output_length_ratio",
+            "value": 0.5,
+            "source": "Fig. 5 Panel 2",
+            "status": "paper_specified",
+            "use": "target",
+            "metric": "Output Length",
+            "read_from": "Panel 2 Output Length: Dr. GRPO is ~520 and GRPO is ~1050 at final step, ratio ~0.5",
+        },
+        {
+            "name": "response_length_reduction_incorrect",
+            "value": 0.55,
+            "source": "Fig. 5 Panel 4",
+            "status": "paper_specified",
+            "use": "target",
+            "metric": "Output Length (Incorrect)",
+            "read_from": "Panel 4 Output Length (Incorrect): Dr. GRPO/GRPO final ratio ~0.55",
+        },
+    ]
+
+    out = apply_verification_contract(spec)
+
+    assert out["verification"]["pool"] == "rlvr"
+    assert {
+        (threshold["metric"], threshold["target_value"])
+        for threshold in out["thresholds"]
+    } == {("overall_length_ratio", 0.5), ("incorrect_length_ratio", 0.55)}

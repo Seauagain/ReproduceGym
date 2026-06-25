@@ -1,33 +1,69 @@
 # ReproduceGym
 
-ReproduceGym turns RL/ML papers into sandbox reproduction tasks with verifiable
-rewards. The current pipeline is built around RLVR-style tasks:
+ReproduceGym turns RL/ML papers into sandbox reproduction tasks with verifiable,
+metric-based rewards. It is designed for the workflow where an agent reads a
+paper, builds claim-level reproduction tasks, runs those tasks in an isolated
+sandbox, and scores the result with a hidden verifier.
+
+The current pipeline is built around RLVR-style tasks:
 
 ```text
 RLVR task = paper claim + recomputable metrics + paper-grounded targets + reward curves
 ```
 
-The system does not treat a paper as one monolithic reproduction. It extracts
-scientific claims, binds each claim to its supporting evidence, compiles a
-verifier contract, renders ClawGym-compatible tasks, and then runs an
-in-sandbox reproduction agent on a chosen compute node.
+Instead of treating a paper as one giant reproduction, ReproduceGym extracts the
+paper's scientific claims, binds each claim to its supporting evidence, compiles
+a verifier contract, renders ClawGym-compatible tasks, and runs an in-sandbox
+reproduction agent on a chosen compute node.
 
 ## Why This Exists
 
-Earlier task builds could produce claims without explicit targets, directional
-thresholds such as `metric > 0`, or rewards tied to verdict labels. Those tasks
-looked runnable but were weak RLVR targets: a failed or partial reproduction
-could still receive misleading reward.
+Older task builds could produce runnable-looking tasks without explicit targets,
+with directional thresholds such as `metric > 0`, or with rewards tied to verdict
+labels. Those tasks were weak RLVR targets: a partial or failed reproduction
+could still receive a misleading reward.
 
-The current design is stricter:
+This version makes the contract stricter:
 
 - Claims come from the paper text, not from reverse-engineering figures.
-- Figures/tables are used as evidence for the claim and as target sources.
-- Accepted RLVR tasks must have paper-grounded numeric `target_value`s.
+- Figures and tables are evidence for claims and sources for targets.
+- Accepted RLVR tasks must have paper-grounded numeric `target_value` fields.
 - Reward is computed from metric values and continuous reward curves, not from
-  human-readable verdict strings.
-- Metrics without grounded targets are kept as diagnostics or routed to
-  `exploration`; they are not exposed as accepted RLVR tasks.
+  verdict strings.
+- Metrics without grounded targets stay as diagnostics or go to `exploration`;
+  they are not exposed as accepted RLVR tasks.
+
+## Quick Start
+
+```bash
+# 1. Parse a paper into Markdown + local figures.
+python parse_paper.py --url 2503.20783 --paper-id 2503-dr-grpo
+
+# 2. Build claim-level RLVR tasks from the parse bundle.
+python build_claim_tasks.py \
+  --paper runs/2503-dr-grpo \
+  --paper-id 2026-06-25-dr-grpo \
+  --out runs \
+  --parse-images auto \
+  --non-strict-vl \
+  --max-claims 5
+
+# 3. Inspect the exact task dirs downstream agents should consume.
+python - <<'PY'
+import json
+from pathlib import Path
+
+manifest = json.loads(Path("runs/2026-06-25-dr-grpo/task_manifest.json").read_text())
+for task in manifest["tasks"]:
+    print(task["claim_id"], task["spec_hash"], task["task_dir"])
+PY
+
+# 4. Run one rendered task on a compute node.
+python run.py \
+  --claim_id c001_dr_grpo_reduces_response_length \
+  --spec-hash <spec_hash> \
+  --server <node-alias>
+```
 
 ## Architecture
 
@@ -48,14 +84,14 @@ paper source
 Important directories:
 
 ```text
-prompts/                 LLM/VL prompts for claim and evidence extraction
-reproducegym/pipeline/   parse/build/render/validate contract pipeline
-reproducegym/schema/     canonical claim spec schema
-reproducegym/verifier/   reward recomputation engine
-agent_trace/             API-level trajectory capture
-config/                  compute inventory examples and local inventories
-runs/<paper_id>/         generated parse/build/run artifacts
-docs/                    design notes and known gaps
+prompts/                 LLM/VL prompts for claim and evidence extraction.
+reproducegym/pipeline/   Parse, build, render, and validation pipeline.
+reproducegym/schema/     Canonical claim spec schema.
+reproducegym/verifier/   Reward recomputation engine.
+agent_trace/             API-level trajectory capture.
+config/                  Compute inventory examples and local inventories.
+runs/<paper_id>/         Generated parse/build/run artifacts.
+docs/                    Design notes and known gaps.
 ```
 
 ## Setup
@@ -69,7 +105,7 @@ cp .env.example .env
 Fill in the providers you use:
 
 - MinerU credentials for PDF parsing.
-- Anthropic-compatible credentials for text claim extraction/refinement.
+- Anthropic-compatible credentials for text claim extraction and refinement.
 - Optional multimodal vision provider for figure target extraction.
 
 For remote compute, create a local node inventory:
@@ -92,7 +128,8 @@ python -m pytest -q
 ### Stage 0: Parse
 
 `parse_paper.py` converts an arXiv id, PDF URL, local PDF, or local Markdown into
-a parse bundle:
+a parse bundle. The build stage consumes this bundle and reuses its local figure
+index, so image references must resolve locally.
 
 ```text
 runs/<paper_id>/00-parse/
@@ -116,7 +153,8 @@ pipeline derives one from the source.
 ### Stage 1: Build Claims And Tasks
 
 `build_claim_tasks.py` consumes a parse bundle and produces claim-level tasks.
-It does not launch a sandbox or GPU job.
+It does not launch a sandbox or GPU job. It may call text and vision model APIs
+depending on cache state and `--parse-images`.
 
 ```bash
 python build_claim_tasks.py \
@@ -175,7 +213,8 @@ hash directory from `03-task/`.
 ### Stage 2: Run A Reproduction
 
 `run.py` executes one already-rendered task. It never rebuilds tasks and never
-reads the paper.
+reads the paper. It resolves a task, probes the selected node, launches the
+in-sandbox reproduction agent, and records the resulting trajectory.
 
 ```bash
 python run.py \
@@ -240,8 +279,8 @@ The build pipeline is claim-first:
    checks, leak scans, hash consistency, and synthetic reward selftests.
 
 Only accepted `rlvr` tasks are written to `task_manifest.json`. Rejected or
-partial claims remain in `01-extract/claim_verification_report.json` with reasons
-for debugging and future recompilation.
+partial claims are still preserved in `01-extract/claim_verification_report.json`
+with the reason they were routed to `exploration`.
 
 ## Example: Build Dr-GRPO Tasks
 
@@ -291,8 +330,9 @@ python run.py \
   See `docs/derived-target-contract-gaps.md`.
 - Visual curve targets depend on VL estimates and therefore use conservative
   tolerances.
-- Some important claims remain `exploration` when the paper lacks a numeric
-  target, the figure read is ambiguous, or reproduction parameters are missing.
+- Some important claims remain in `exploration` when the paper lacks a numeric
+  target, the figure read is ambiguous, or the reproduction parameters are
+  incomplete.
 
 ## Development Notes
 

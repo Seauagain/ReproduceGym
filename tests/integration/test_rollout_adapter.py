@@ -67,7 +67,7 @@ def test_rollout_produces_reward_and_trajectory(tmp_path, valid_claim_spec):
         sandbox=LocalSandbox(),
         run_dir=tmp_path / "run",
     )
-    assert out["reward"] == 0.8
+    assert out["reward"] == 1.0
     assert out["session_id"] == "sess-roll"
     assert out["trajectory_path"].is_file()
     assert out["returncode"] == 0

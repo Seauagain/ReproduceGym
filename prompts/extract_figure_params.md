@@ -41,6 +41,9 @@ Strict JSON object. No prose outside JSON.
     {
       "name": "response_length_ratio",
       "value": 0.9,
+      "metric": "response_length_ratio",
+      "condition": "DR-GRPO vs GRPO",
+      "tolerance": {"rel": 0.3},
       "source": "Fig. 5",
       "visibility": "hidden",
       "use": "target",
@@ -61,6 +64,26 @@ Strict JSON object. No prose outside JSON.
 
 - Hidden targets are answer-key material: downstream they are routed into
   reward/, never input_files/.
+- Every target should bind to the primary metric it verifies via `metric`. If the
+  target is read visually from a curve/bar, include a conservative `tolerance`
+  (usually `{"rel": 0.25}` to `{"rel": 0.30}`) and lower confidence. If you cannot
+  bind a value to a metric, keep it as contextual evidence rather than a verifier
+  target.
+- For multi-panel figures, inspect each panel independently. If a panel shows two
+  relevant curves/bars at a final step/checkpoint, emit both endpoint values when
+  useful and also emit verifier-friendly derived targets such as ratios or deltas
+  (`overall_length_ratio`, `incorrect_length_ratio`, `accuracy_difference`). Do
+  not skip a panel just because another panel already supports the same textual
+  claim.
+- Use snake_case verifier metric names in `metric` whenever possible. Examples:
+  `overall_length_ratio` for a panel titled "Output Length";
+  `incorrect_length_ratio` for "Output Length (Incorrect)";
+  `accuracy_difference` or `avg_benchmark_accuracy` for benchmark score panels.
+- When deriving a ratio, set `value` to the ratio itself, not one endpoint, and
+  record the endpoints in `read_from` (e.g. "Panel 2: Dr. GRPO ~520, GRPO ~1050
+  at step 150; ratio ~0.50").
+- Every target must be auditable: include the figure/table `source`, a concrete
+  `read_from` note describing the tick/panel/curve/bar used, and `confidence`.
 - Visible reproduction parameters are allowed in params.yaml because the agent
   needs them to run the experiment faithfully.
 - Prefer explicit axis labels/ticks over visual estimates. For visual estimates,

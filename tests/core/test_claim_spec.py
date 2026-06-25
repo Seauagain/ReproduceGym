@@ -21,6 +21,27 @@ def test_valid_spec_passes(valid_claim_spec):
     validate_claim_spec(valid_claim_spec)  # must not raise
 
 
+def test_schema_accepts_diagnostic_metrics_and_sanitizer_provenance(valid_claim_spec):
+    valid_claim_spec["conditions"][0]["source_label"] = "Oat-Zero-7B"
+    valid_claim_spec["metrics"][0]["source_name"] = "4shot_avg"
+    valid_claim_spec["diagnostic_metrics"] = [
+        {
+            "name": "ungrounded_gap",
+            "formula": "mean(treatment.len) - mean(baseline.len)",
+            "direction": "higher_is_better",
+            "source_name": "Ungrounded Gap",
+        }
+    ]
+    valid_claim_spec["verification"] = {
+        "mode": "numeric_threshold",
+        "pool": "rlvr",
+        "targets_bound": ["length_ratio"],
+        "diagnostic_reason": "ungrounded metric(s) moved to diagnostics: ungrounded_gap",
+    }
+
+    validate_claim_spec(valid_claim_spec)
+
+
 def test_missing_required_field_raises(valid_claim_spec):
     del valid_claim_spec["metrics"]
     with pytest.raises(ClaimSpecError) as exc:

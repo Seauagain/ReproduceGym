@@ -12,6 +12,15 @@
       "description": "Stable id, unique within the paper, e.g. c001_std_bias.",
       "pattern": "^[a-z0-9_]+$"
     },
+    "claim_uid": {
+      "type": "string",
+      "description": "Stable extraction-stage claim identity used to join candidate/evidence/refinement/report artifacts."
+    },
+    "contract_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8,64}$",
+      "description": "Hash of the verifier contract, preserved across report/spec/targets/check.py."
+    },
     "claim_num": {
       "type": "integer",
       "minimum": 1,
@@ -96,6 +105,7 @@
         "required": ["label", "description"],
         "properties": {
           "label": {"type": "string", "description": "Output label, e.g. 'grpo' / 'drgrpo'."},
+          "source_label": {"type": "string", "description": "Original paper/LLM condition label before verifier-safe normalization."},
           "description": {"type": "string"},
           "switches": {"type": "object", "description": "Free-form knobs that differ in this condition."}
         }
@@ -105,6 +115,16 @@
       "type": "array",
       "description": "Variables that MUST be held identical across conditions. Renders into task.md \u00a73.",
       "items": {"type": "string"}
+    },
+    "reproduction_protocol": {
+      "type": "object",
+      "description": "Agent-facing reproduction protocol; may describe training, API calls, inference, evaluation, and expected artifacts.",
+      "additionalProperties": true
+    },
+    "verification_contract": {
+      "type": "object",
+      "description": "Typed verifier contract used to derive thresholds/check.py. Kept for provenance alongside normalized metrics/thresholds.",
+      "additionalProperties": true
     },
     "params": {
       "type": "array",
@@ -129,6 +149,23 @@
           "use": {"type": "string", "enum": ["reproduction_param", "target", "context"]},
           "confidence": {"type": "number"},
           "read_from": {"type": "string"},
+          "metric": {"type": "string", "description": "Primary metric this verifier target binds to."},
+          "condition": {"type": "string", "description": "Optional condition label this value describes."},
+          "tolerance": {
+            "description": "Allowed target tolerance, usually {rel: 0.15} or {abs: ...}.",
+            "oneOf": [
+              {"type": "number"},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "rel": {"type": "number", "minimum": 0},
+                  "abs": {"type": "number", "minimum": 0}
+                }
+              }
+            ]
+          },
+          "comparator": {"type": "string", "enum": [">=", "<=", ">", "<", "=="]},
           "applies_to_claim": {"type": "boolean", "default": true, "description": "Whether this param is relevant to THIS claim."},
           "local_substitute_allowed": {"type": "boolean", "description": "If paper_unspecified, may the agent substitute a local value?"},
           "affects_strict_reproduction": {"type": "boolean", "description": "Whether substituting/missing this blocks a strict verdict."},
@@ -146,9 +183,26 @@
         "required": ["name", "formula", "direction"],
         "properties": {
           "name": {"type": "string"},
+          "source_name": {"type": "string", "description": "Original metric name before verifier-safe normalization."},
           "formula": {"type": "string", "description": "Recompute rule over metrics.csv, e.g. 'mean(grpo.grad_norm) / mean(drgrpo.grad_norm)'."},
           "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
           "window": {"type": "string", "description": "e.g. 'last_50_steps' with fallback rule."}
+        }
+      }
+    },
+    "diagnostic_metrics": {
+      "type": "array",
+      "description": "Metrics extracted from the claim but excluded from RLVR reward because no paper-grounded target was bound. They are retained for audit/protocol context only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "formula", "direction"],
+        "properties": {
+          "name": {"type": "string"},
+          "source_name": {"type": "string", "description": "Original metric name before verifier-safe normalization."},
+          "formula": {"type": "string"},
+          "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
+          "window": {"type": "string"}
         }
       }
     },
@@ -162,8 +216,65 @@
         "properties": {
           "metric": {"type": "string", "description": "Must match a metrics[].name."},
           "pass_threshold": {"type": "number"},
+          "target_value": {"type": "number", "description": "Original paper target used for continuous reward shaping."},
+          "tolerance_abs": {"type": "number", "minimum": 0, "description": "Absolute tolerance around target_value."},
+          "target_evidence": {
+            "type": "object",
+            "description": "Audit trail for the paper evidence anchoring this verifier target.",
+            "additionalProperties": false,
+            "properties": {
+              "param_name": {"type": "string"},
+              "source": {"type": "string"},
+              "read_from": {"type": "string"},
+              "confidence": {"type": "number"}
+            }
+          },
           "rationale": {"type": "string"},
+          "source": {"type": "string"},
+          "confidence": {"type": "number"},
+          "tolerance": {
+            "description": "How the threshold was relaxed from the paper target.",
+            "oneOf": [
+              {"type": "number"},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "rel": {"type": "number", "minimum": 0},
+                  "abs": {"type": "number", "minimum": 0}
+                }
+              }
+            ]
+          },
           "exposure": {"type": "string", "enum": ["visible", "hidden"], "default": "hidden"}
+        }
+      }
+    },
+    "reward_curves": {
+      "type": "object",
+      "description": "Canonical per-metric target reward curves consumed by reward/check.py. Every RLVR metric must have one.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric", "direction", "points"],
+        "properties": {
+          "metric": {"type": "string"},
+          "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better"]},
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "reward"],
+              "properties": {
+                "value": {"type": "number"},
+                "reward": {"type": "number", "minimum": 0, "maximum": 1}
+              }
+            }
+          },
+          "source": {"type": "object", "additionalProperties": true},
+          "rationale": {"type": "string"}
         }
       }
     },
@@ -196,7 +307,24 @@
       "additionalProperties": false,
       "properties": {
         "base_by_verdict": {"type": "object", "description": "e.g. {reproduced_strict:0.9, reproduced:0.8, failed:0.35, inconclusive:0.2, invalid:0.0}."},
-        "evidence_bonus_cap": {"type": "number"}
+        "evidence_bonus_cap": {"type": "number"},
+        "aggregation": {"type": "string", "enum": ["min", "mean", "weighted_mean"]},
+        "weights": {"type": "object"}
+      }
+    },
+    "verification": {
+      "type": "object",
+      "description": "Executable verification contract and pool routing derived from thresholds/targets.",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["numeric_threshold", "directional", "structural", "unverifiable"]
+        },
+        "pool": {"type": "string", "enum": ["rlvr", "exploration"]},
+        "targets_bound": {"type": "array", "items": {"type": "string"}},
+        "diagnostic_reason": {"type": "string"},
+        "reason": {"type": "string"}
       }
     },
     "input_files": {

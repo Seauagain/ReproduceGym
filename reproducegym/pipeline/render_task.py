@@ -48,15 +48,44 @@ def derive_contract(spec: dict[str, Any]) -> dict[str, Any]:
     metrics = spec["metrics"]
     thresholds = spec.get("thresholds", [])
     required = spec.get("required_outputs", {})
+    metric_names = [m["name"] for m in metrics]
+    threshold_names = {t["metric"] for t in thresholds}
+    verification = dict(spec.get("verification") or {})
+    verification_mode = verification.get("mode") or (
+        "numeric_threshold" if metric_names and set(metric_names).issubset(threshold_names) else "unverifiable"
+    )
+    verification_pool = verification.get("pool") or (
+        "rlvr" if verification_mode in {"numeric_threshold", "directional", "structural"} else "exploration"
+    )
     return {
         "claim_id": spec["claim_id"],
+        "claim_uid": spec.get("claim_uid"),
+        "contract_hash": spec.get("contract_hash"),
         "spec_hash": spec["spec_hash"],
         "paper_id": spec["paper_id"],
-        "metric_names": [m["name"] for m in metrics],
+        "metric_names": metric_names,
         "metric_direction": {m["name"]: m["direction"] for m in metrics},
         "metric_formula": {m["name"]: m.get("formula", "") for m in metrics},
         "metric_window": {m["name"]: m.get("window") for m in metrics},
         "thresholds": {t["metric"]: t["pass_threshold"] for t in thresholds},
+        "threshold_details": {
+            t["metric"]: {
+                k: t[k]
+                for k in (
+                    "pass_threshold",
+                    "target_value",
+                    "tolerance_abs",
+                    "tolerance",
+                    "target_evidence",
+                    "source",
+                    "confidence",
+                    "rationale",
+                    "exposure",
+                )
+                if k in t
+            }
+            for t in thresholds
+        },
         "visible_thresholds": {
             t["metric"]: t["pass_threshold"] for t in thresholds if _threshold_is_visible(t)
         },
@@ -64,12 +93,15 @@ def derive_contract(spec: dict[str, Any]) -> dict[str, Any]:
             t["metric"]: t["pass_threshold"] for t in thresholds if not _threshold_is_visible(t)
         },
         "threshold_rationale": {t["metric"]: t.get("rationale", "") for t in thresholds},
+        "reward_curves": dict(spec.get("reward_curves") or {}),
         "required_files": list(required.get("files", [])),
         "metrics_csv_columns": list(required.get("metrics_csv_columns", [])),
         "min_rows_per_condition": required.get("min_rows_per_condition"),
         "conditions": [cond["label"] for cond in spec.get("conditions", [])],
         "verdicts": list(STANDARD_VERDICTS),
         "verdict_rules": spec.get("verdict_rules", {}),
+        "verification_mode": verification_mode,
+        "verification_pool": verification_pool,
     }
 
 
@@ -102,6 +134,8 @@ def render_data_entry(spec: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "paper_id": spec["paper_id"],
             "claim_id": spec["claim_id"],
+            "claim_uid": spec.get("claim_uid"),
+            "contract_hash": spec.get("contract_hash"),
             "claim_num": spec.get("claim_num"),
             "claim_slug": spec.get("claim_slug"),
             "display_title": spec.get("display_title"),
@@ -116,6 +150,8 @@ def render_data_entry(spec: dict[str, Any]) -> dict[str, Any]:
             "grading_type": "automated",
             "public_inputs": visible_files(spec),
             "private_targets_hidden": bool(c["hidden_thresholds"]),
+            "verification_mode": c["verification_mode"],
+            "pool": c["verification_pool"],
         },
         "input_mount_dir": INPUT_MOUNT_DIR,
     }
@@ -127,6 +163,10 @@ def render_task_md(spec: dict[str, Any]) -> str:
     add = lines.append
 
     add(f"# Task: Reproduce claim `{spec['claim_id']}`\n")
+    if spec.get("claim_uid"):
+        add(f"Claim UID: `{spec['claim_uid']}`\n")
+    if spec.get("contract_hash"):
+        add(f"Verifier contract hash: `{spec['contract_hash']}`\n")
     add(f"Spec hash: `{spec['spec_hash']}`\n")
     add(
         "You are an autonomous reproduction agent. Read this specification and the "
@@ -171,6 +211,15 @@ def render_task_md(spec: dict[str, Any]) -> str:
         add("Hold these variables identical across all conditions:\n")
         for var in spec["matched_variables"]:
             add(f"- {var}")
+        add("")
+    if spec.get("reproduction_protocol"):
+        add("## 3b. Reproduction Protocol\n")
+        proto = spec["reproduction_protocol"]
+        if isinstance(proto, dict):
+            for key, value in proto.items():
+                add(f"- {key}: {value}")
+        else:
+            add(str(proto))
         add("")
 
     add("## 4. Parameter Contract\n")
@@ -236,6 +285,8 @@ def render_task_md(spec: dict[str, Any]) -> str:
 def render_params_yaml(spec: dict[str, Any]) -> str:
     doc: dict[str, Any] = {
         "claim_id": spec["claim_id"],
+        "claim_uid": spec.get("claim_uid"),
+        "contract_hash": spec.get("contract_hash"),
         "spec_hash": spec["spec_hash"],
         "parameter_policy": {
             "paper_specified": "Must not be changed silently.",
@@ -279,6 +330,8 @@ def render_protocol_yaml(spec: dict[str, Any]) -> str:
         "protocol_version": 0.1,
         "task_id": task_id_for(spec),
         "claim_id": spec["claim_id"],
+        "claim_uid": spec.get("claim_uid"),
+        "contract_hash": spec.get("contract_hash"),
         "spec_hash": spec["spec_hash"],
         "workspace_contract": {
             "exposure": spec["exposure_policy"],
@@ -321,6 +374,8 @@ def render_expected_json(spec: dict[str, Any]) -> dict[str, Any]:
         primary.append(entry)
     return {
         "claim_id": spec["claim_id"],
+        "claim_uid": spec.get("claim_uid"),
+        "contract_hash": spec.get("contract_hash"),
         "spec_hash": spec["spec_hash"],
         "primary_metrics": primary,
         "allowed_verdicts": c["verdicts"],
@@ -333,12 +388,19 @@ def render_reward_targets_yaml(spec: dict[str, Any]) -> str:
     c = derive_contract(spec)
     doc: dict[str, Any] = {
         "claim_id": spec["claim_id"],
+        "claim_uid": spec.get("claim_uid"),
+        "contract_hash": spec.get("contract_hash"),
         "spec_hash": spec["spec_hash"],
         "hidden_from_agent": True,
         "primary_thresholds": {
             metric: {
                 "pass_threshold": value,
                 "direction": c["metric_direction"].get(metric, ""),
+                **{
+                    k: v
+                    for k, v in c["threshold_details"].get(metric, {}).items()
+                    if k not in {"pass_threshold", "exposure"}
+                },
                 **(
                     {"rationale": c["threshold_rationale"][metric]}
                     if c["threshold_rationale"].get(metric)
@@ -347,7 +409,12 @@ def render_reward_targets_yaml(spec: dict[str, Any]) -> str:
             }
             for metric, value in c["thresholds"].items()
         },
+        "reward_curves": c["reward_curves"],
         "verdicts": c["verdicts"],
+        "verification": {
+            "mode": c["verification_mode"],
+            "pool": c["verification_pool"],
+        },
     }
     hidden_params = {
         p["name"]: {k: p[k] for k in ("value", "unit", "source") if p.get(k) is not None}

@@ -17,6 +17,7 @@ from typing import Any
 from reproducegym.claim_spec import dump_claim_spec, validate_claim_spec
 from reproducegym.pipeline.claim_ids import claim_slug_from_id, slugify
 from reproducegym.pipeline.spec_hash import with_spec_hash
+from reproducegym.pipeline.synthesize_contract import apply_verification_contract
 
 DEFAULT_REQUIRED_OUTPUTS = {"files": ["output/result.json", "output/metrics.csv"]}
 DEFAULT_TIER = "T2_proxy"
@@ -52,10 +53,12 @@ def _norm_param(p: dict[str, Any]) -> dict[str, Any]:
     exposure = p.get("exposure") or p.get("visibility")
     if exposure not in {None, "visible", "hidden"}:
         exposure = None
+    if exposure is None and p.get("use") == "target":
+        exposure = "hidden"
     out: dict[str, Any] = {"name": p["name"], "status": status}
     for k in ("value", "unit", "source", "applies_to_claim", "local_substitute_allowed",
               "affects_strict_reproduction", "required_for_strict", "use", "confidence",
-              "read_from"):
+              "read_from", "metric", "condition", "tolerance", "comparator"):
         if k in p and p[k] is not None:
             out[k] = p[k]
     if exposure is not None:
@@ -107,10 +110,19 @@ def _evidence_for_claim(
 def _figure_evidence_to_params(figures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for fig in figures:
-        for p in list(fig.get("params") or []) + list(fig.get("targets") or []):
+        for p in fig.get("params") or []:
             if isinstance(p, dict):
                 raw = dict(p)
                 raw.setdefault("source", fig.get("figure_ref", "figure (multimodal)"))
+                raw.setdefault("use", "reproduction_param")
+                raw.setdefault("visibility", "visible")
+                entries.append(_norm_param(raw))
+        for p in fig.get("targets") or []:
+            if isinstance(p, dict):
+                raw = dict(p)
+                raw.setdefault("source", fig.get("figure_ref", "figure (multimodal)"))
+                raw.setdefault("use", "target")
+                raw.setdefault("visibility", "hidden")
                 entries.append(_norm_param(raw))
     return entries
 
@@ -175,6 +187,9 @@ def merge_claim_spec(
     for opt in ("requires_training", "cost", "anchors", "conditions", "matched_variables"):
         if claim.get(opt) is not None:
             spec[opt] = claim[opt]
+    for opt in ("claim_uid", "contract_hash", "reproduction_protocol", "verification_contract", "verification", "reward_curves"):
+        if claim.get(opt) is not None:
+            spec[opt] = claim[opt]
 
     params = [_norm_param(p) for p in claim.get("params", [])]
     params += _figure_evidence_to_params(bound_figures)
@@ -188,6 +203,7 @@ def merge_claim_spec(
     if reward:
         spec["reward"] = reward
 
+    spec = apply_verification_contract(spec)
     spec = with_spec_hash(spec)
     validate_claim_spec(spec)
     if out_path is not None:

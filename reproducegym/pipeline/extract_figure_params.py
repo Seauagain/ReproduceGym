@@ -67,7 +67,16 @@ def _normalize_param(
         "exposure": exposure,
         "use": e.get("use") or default_use,
     }
-    for k in ("unit", "confidence", "read_from", "applies_to_claim"):
+    for k in (
+        "unit",
+        "confidence",
+        "read_from",
+        "applies_to_claim",
+        "metric",
+        "condition",
+        "tolerance",
+        "comparator",
+    ):
         if e.get(k) is not None:
             entry[k] = e[k]
     return entry

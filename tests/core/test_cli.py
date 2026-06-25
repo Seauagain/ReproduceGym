@@ -132,4 +132,4 @@ def test_score_offline(tmp_path, valid_claim_spec, capsys):
     (ws / "output" / "result.json").write_text("{}", encoding="utf-8")
     rc = cli.main(["score", str(task_dir), str(ws)])
     assert rc == 0
-    assert capsys.readouterr().out.strip() == "0.8"
+    assert capsys.readouterr().out.strip() == "1.0"

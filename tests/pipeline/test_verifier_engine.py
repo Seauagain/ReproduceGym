@@ -153,6 +153,86 @@ def test_recompute_failed_when_metric_misses(tmp_path):
     assert rep["reward"] == 0.35
 
 
+def test_recompute_failed_reward_is_capped_even_with_target_score(tmp_path):
+    ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=95)  # ratio 0.95 > 0.8
+    spec = dict(
+        SPEC,
+        threshold_details={
+            # Continuous score is 1.0 because value equals target, but verdict is
+            # still failed because pass_threshold is stricter.
+            "length_ratio": {"target_value": 0.95, "tolerance_abs": 0.1, "pass_threshold": 0.8}
+        },
+    )
+    rep = recompute(ws, spec)
+    assert rep["verdict"] == "failed"
+    assert rep["metrics"]["length_ratio"]["reward"] == 1.0
+    assert rep["reward"] == 0.35
+
+
+def test_recompute_reward_curves_override_verdict_caps(tmp_path):
+    ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=50)  # ratio 0.5 target
+    spec = dict(
+        SPEC,
+        reward_by_verdict={"reproduced": 0.1, "failed": 0.1, "inconclusive": 0.0, "invalid": 0.0},
+        reward_curves={
+            "length_ratio": {
+                "direction": "lower_is_better",
+                "points": [
+                    {"value": 0.9, "reward": 0.0},
+                    {"value": 0.7, "reward": 0.5},
+                    {"value": 0.5, "reward": 1.0},
+                ],
+            }
+        },
+    )
+
+    rep = recompute(ws, spec)
+
+    assert rep["verdict"] == "reproduced"
+    assert rep["metrics"]["length_ratio"]["reward"] == 1.0
+    assert rep["reward"] == 1.0
+
+
+def test_recompute_reward_curves_use_min_aggregation(tmp_path):
+    ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=50)
+    spec = dict(
+        SPEC,
+        metrics=["length_ratio", "baseline_len"],
+        formulas={
+            "length_ratio": "mean(treatment.len) / mean(baseline.len)",
+            "baseline_len": "mean(baseline.len)",
+        },
+        directions={"length_ratio": "lower_is_better", "baseline_len": "higher_is_better"},
+        thresholds={"length_ratio": 0.8, "baseline_len": 90.0},
+        reward_curves={
+            "length_ratio": {
+                "direction": "lower_is_better",
+                "points": [
+                    {"value": 0.9, "reward": 0.0},
+                    {"value": 0.7, "reward": 0.5},
+                    {"value": 0.5, "reward": 1.0},
+                ],
+            },
+            "baseline_len": {
+                "direction": "higher_is_better",
+                "points": [
+                    {"value": 90.0, "reward": 0.0},
+                    {"value": 95.0, "reward": 0.5},
+                    {"value": 110.0, "reward": 1.0},
+                ],
+            },
+        },
+        reward={"aggregation": "min"},
+    )
+
+    rep = recompute(ws, spec)
+
+    assert rep["verdict"] == "reproduced"
+    assert rep["metrics"]["length_ratio"]["reward"] == 1.0
+    assert rep["metrics"]["baseline_len"]["reward"] == pytest.approx(2 / 3)
+    assert rep["reward"] == pytest.approx(0.666667)
+
+
 def test_recompute_ignores_agent_self_reported_verdict(tmp_path):
     # Agent LIES: result.json claims reproduced+reward 1.0, but the data fails.
     ws = _make_workspace(tmp_path, baseline_len=100, treatment_len=95, result_verdict="reproduced")

@@ -154,14 +154,17 @@ def _safe_load_json(path: Path) -> Any:
 
 def build_manifest(layout: PaperLayout, *, paper_id: str | None = None) -> dict[str, Any]:
     """Scan the layout and produce an accurate machine-readable index."""
-    claims_doc = _safe_load_json(layout.extract_dir / "claims.json")
-    selected_doc = _safe_load_json(layout.extract_dir / "selected_claims.json")
+    selected_doc = _safe_load_json(layout.extract_dir / "selected_claims_for_build.json")
+    legacy_claims_doc = _safe_load_json(layout.extract_dir / "claims.json")
+    legacy_selected_doc = _safe_load_json(layout.extract_dir / "selected_claims.json")
     candidate_doc = _safe_load_json(layout.extract_dir / "candidate_claims.json")
     claims = (
         [c.get("claim_id") for c in selected_doc if isinstance(c, dict)]
         if isinstance(selected_doc, list)
-        else [c.get("claim_id") for c in claims_doc if isinstance(c, dict)]
-        if isinstance(claims_doc, list)
+        else [c.get("claim_id") for c in legacy_selected_doc if isinstance(c, dict)]
+        if isinstance(legacy_selected_doc, list)
+        else [c.get("claim_id") for c in legacy_claims_doc if isinstance(c, dict)]
+        if isinstance(legacy_claims_doc, list)
         else []
     )
     candidate_claims = (
@@ -236,9 +239,18 @@ def build_manifest(layout: PaperLayout, *, paper_id: str | None = None) -> dict[
         claim_id = task.split("/", 1)[0]
         task_by_claim.setdefault(claim_id, task)
 
+    selected_table_doc = (
+        selected_doc
+        if isinstance(selected_doc, list)
+        else legacy_selected_doc
+        if isinstance(legacy_selected_doc, list)
+        else legacy_claims_doc
+        if isinstance(legacy_claims_doc, list)
+        else []
+    )
     claim_table: list[dict[str, Any]] = []
-    if isinstance(selected_doc, list):
-        for claim in selected_doc:
+    if isinstance(selected_table_doc, list):
+        for claim in selected_table_doc:
             if not isinstance(claim, dict):
                 continue
             claim_id = str(claim.get("claim_id") or "")
@@ -356,7 +368,7 @@ def render_claims_md(manifest: dict[str, Any]) -> str:
     lines: list[str] = [
         f"# Selected Claims: `{paper_id}`",
         "",
-        "This file is generated from `selected_claims.json` and the rendered task index.",
+        "This file is generated from `selected_claims_for_build.json` and the rendered task index.",
         "",
     ]
     if not rows:

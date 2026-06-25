@@ -7,15 +7,29 @@ import json
 import pytest
 
 from reproducegym.pipeline.render_task import derive_contract, render_task
-from reproducegym.pipeline.validate_task import validate_task
+from reproducegym.pipeline.validate_task import _num_strings, _visible_text_for_leak_scan, validate_task
 
 
 def _write_check_py(task_dir, contract_overrides=None):
     """Author a minimal check.py whose CONTRACT matches (or is tampered from) the spec."""
     base = {
         "claim_id": "c1_demo",
+        "contract_hash": "cafebabe1234",
         "metrics": ["length_ratio"],
         "thresholds": {"length_ratio": 0.8},
+        "reward_curves": {
+            "length_ratio": {
+                "metric": "length_ratio",
+                "direction": "lower_is_better",
+                "points": [
+                    {"value": 0.9, "reward": 0.0},
+                    {"value": 0.8, "reward": 0.5},
+                    {"value": 0.7, "reward": 1.0},
+                ],
+                "source": {"source": "Fig. 4"},
+                "rationale": "target curve derived from Fig. 4",
+            }
+        },
         "required_files": ["output/result.json", "output/metrics.csv"],
         "verdicts": ["reproduced", "failed", "inconclusive", "invalid"],
     }
@@ -49,6 +63,21 @@ def test_check_py_threshold_drift_detected(task):
     _write_check_py(task_dir, {"thresholds": {"length_ratio": 0.9}})
     problems = validate_task(task_dir, spec)
     assert any("CONTRACT thresholds" in p for p in problems)
+
+
+def test_check_py_contract_hash_drift_detected(task):
+    task_dir, spec = task
+    _write_check_py(task_dir, {"contract_hash": "badbadbad"})
+    problems = validate_task(task_dir, spec)
+    assert any("contract_hash" in p for p in problems)
+
+
+def test_unexecutable_metric_formula_detected(task):
+    task_dir, spec = task
+    spec = dict(spec)
+    spec["metrics"] = [dict(spec["metrics"][0], formula="num_correct / num_total * 100 on AIME")]
+    problems = validate_task(task_dir, spec)
+    assert any("not executable by check.py" in p for p in problems)
 
 
 def test_check_py_metric_drift_detected(task):
@@ -85,6 +114,17 @@ def test_exposure_leak_in_task_md_detected(task):
     assert any("exposure leak" in p for p in problems)
 
 
+def test_float_hidden_threshold_does_not_search_bare_integer():
+    assert "5" not in _num_strings(5.0)
+    assert "5.0" in _num_strings(5.0)
+
+
+def test_leak_scan_ignores_renderer_protocol_version():
+    text = _visible_text_for_leak_scan("protocol_version: 0.1\nthreshold hint: 0.1\n")
+    assert "protocol_version" not in text
+    assert "threshold hint: 0.1" in text
+
+
 def test_missing_data_entry_detected(task):
     task_dir, spec = task
     _write_check_py(task_dir)
@@ -101,3 +141,29 @@ def test_protocol_required_files_drift_detected(task):
     proto.write_text(text, encoding="utf-8")
     problems = validate_task(task_dir, spec)
     assert any("agent_must_write" in p for p in problems)
+
+
+def test_rlvr_task_without_threshold_is_rejected(tmp_path, valid_claim_spec):
+    spec = dict(valid_claim_spec)
+    spec["thresholds"] = []
+    spec["verification"] = {"mode": "numeric_threshold", "pool": "rlvr"}
+    task_dir = render_task(spec, tmp_path / "task")
+    _write_check_py(task_dir, {"thresholds": {}})
+
+    problems = validate_task(task_dir, spec)
+
+    assert any("no executable threshold" in p for p in problems)
+
+
+def test_rlvr_threshold_without_evidence_is_rejected(tmp_path, valid_claim_spec):
+    spec = dict(valid_claim_spec)
+    spec["thresholds"] = [
+        {"metric": "length_ratio", "pass_threshold": 0.8, "exposure": "hidden"}
+    ]
+    spec["verification"] = {"mode": "numeric_threshold", "pool": "rlvr"}
+    task_dir = render_task(spec, tmp_path / "task")
+    _write_check_py(task_dir)
+
+    problems = validate_task(task_dir, spec)
+
+    assert any("missing target evidence source" in p for p in problems)

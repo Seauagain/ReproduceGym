@@ -42,9 +42,13 @@ def test_data_entry_contract(rendered):
     assert de["task_id"] == task_id_for(spec)
     assert de["input_mount_dir"] == INPUT_MOUNT_DIR
     assert de["metadata"]["claim_id"] == "c1_demo"
+    assert de["metadata"]["claim_uid"] == "clm_demo123"
+    assert de["metadata"]["contract_hash"] == "cafebabe1234"
     assert de["metadata"]["spec_hash"] == "deadbeef1234"
     assert de["metadata"]["paper_id"] == "demo-0001"
     assert de["metadata"]["private_targets_hidden"] is True  # threshold is hidden
+    assert de["metadata"]["pool"] == "rlvr"
+    assert de["metadata"]["verification_mode"] == "numeric_threshold"
 
 
 def test_reward_sh_is_executable_and_calls_check(rendered):
@@ -82,6 +86,8 @@ def test_params_grouped_by_status(rendered):
     task_dir, _ = rendered
     params = yaml.safe_load((task_dir / "input_files" / "params.yaml").read_text())
     assert params["claim_id"] == "c1_demo"
+    assert params["claim_uid"] == "clm_demo123"
+    assert params["contract_hash"] == "cafebabe1234"
     assert params["spec_hash"] == "deadbeef1234"
     assert params["paper_specified"]["learning_rate"]["value"] == 1e-6
 
@@ -92,6 +98,8 @@ def test_protocol_metrics_match_spec(rendered):
     c = derive_contract(spec)
     assert set(proto["metric_computation"].keys()) == set(c["metric_names"])
     assert proto["workspace_contract"]["agent_must_write"] == c["required_files"]
+    assert proto["claim_uid"] == "clm_demo123"
+    assert proto["contract_hash"] == "cafebabe1234"
     assert proto["spec_hash"] == "deadbeef1234"
 
 

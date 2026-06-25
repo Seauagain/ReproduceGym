@@ -1,9 +1,8 @@
 # ReproduceGym
 
-ReproduceGym turns RL/ML papers into sandbox reproduction tasks with verifiable,
-metric-based rewards. It is designed for the workflow where an agent reads a
-paper, builds claim-level reproduction tasks, runs those tasks in an isolated
-sandbox, and scores the result with a hidden verifier.
+ReproduceGym turns RL/ML papers into claim-level sandbox tasks with verifiable,
+metric-based rewards. An agent can read a paper, build reproduction tasks, run
+them in an isolated workspace, and receive a score from a hidden verifier.
 
 The central abstraction is an RLVR task:
 
@@ -11,17 +10,17 @@ The central abstraction is an RLVR task:
 RLVR task = paper claim + recomputable metrics + paper-grounded targets + reward curves
 ```
 
-Instead of treating a paper as one giant reproduction, ReproduceGym extracts the
-paper's scientific claims, binds each claim to its supporting evidence, compiles
-a verifier contract, renders ClawGym-compatible tasks, and runs an in-sandbox
-reproduction agent on a chosen compute node.
+Instead of treating a paper as one large reproduction, ReproduceGym extracts the
+paper's scientific claims, binds each claim to evidence, compiles a verifier
+contract, renders ClawGym-compatible tasks, and runs an in-sandbox reproduction
+agent on a chosen compute node.
 
 ## Why This Exists
 
-Older task builds could produce runnable-looking tasks without explicit targets,
-with directional thresholds such as `metric > 0`, or with rewards tied to verdict
-labels. Those tasks were weak RLVR targets: a partial or failed reproduction
-could still receive a misleading reward.
+Older task builds could look runnable while missing explicit targets, using
+directional thresholds such as `metric > 0`, or tying reward to verdict labels.
+Those tasks were weak RLVR targets: partial or failed reproductions could still
+receive misleading rewards.
 
 This version makes the contract stricter:
 
@@ -35,31 +34,25 @@ This version makes the contract stricter:
 
 ## Architecture
 
-ReproduceGym is split into three modules: build tasks, run tasks, and score
-tasks. The host keeps secrets and verifiers; remote machines only run the
-reproduction workload.
+ReproduceGym has three moving parts: a builder that turns papers into task
+specs, a runner that executes one task in a sandbox, and a verifier that
+recomputes metrics and records the result. The host keeps secrets, task specs,
+verifiers, and traces; remote machines only run the reproduction workload.
 
 ![ReproduceGym architecture](docs/assets/reproducegym-architecture.png)
 
-| Module | Role | Main files |
-|---|---|---|
-| Paper-to-Task Builder | Paper in, task specs out. | `parse_paper.py`, `build_claim_tasks.py`, `reproducegym/pipeline/` |
-| Sandbox Runner | Task in, agent attempt out. | `run.py`, `reproducegym/sandbox/`, `config/` |
-| Verifier & Records | Outputs in, reward and traces out. | `reproducegym/verifier/`, `agent_trace/`, `runs/<paper_id>/` |
+The main code follows the same split: paper parsing and task construction live
+in `parse_paper.py`, `build_claim_tasks.py`, and `reproducegym/pipeline/`; task
+execution starts from `run.py` and `reproducegym/sandbox/`; reward computation
+and records live in `reproducegym/verifier/`, `agent_trace/`, and
+`runs/<paper_id>/`.
 
-Generated `runs/<paper_id>/` directories are intentionally self-describing:
-
-| Stage | Purpose | Main artifacts |
-|---|---|---|
-| `00-parse` | Paper text and figures | `paper.md`, `figures/`, `figures.index.json` |
-| `01-extract` | Claims, evidence, and verification reports | `refined_claims.json`, `claim_verification_report.json` |
-| `02-spec` | Canonical claim specs | `c001_slug.<spec_hash>.yaml` |
-| `03-task` | ClawGym-compatible task directories | `task.md`, `data_entry.json`, `reward/check.py` |
-| `04-run` | Reproduction attempts | `workspace/`, `trajectory/` |
-
-Downstream systems should read `task_manifest.json`, which maps each accepted
-claim to its exact task directory and `spec_hash`. Do not guess from hash
-directories under `03-task/`.
+Each generated run directory is self-describing: `00-parse` holds paper text and
+figures, `01-extract` holds claims and evidence reports, `02-spec` holds
+canonical claim specs, `03-task` holds rendered task directories, and `04-run`
+holds reproduction attempts and trajectories. Downstream systems should read
+`task_manifest.json` for accepted tasks, exact task directories, and
+`spec_hash` values instead of guessing from hashed directories under `03-task/`.
 
 Code map:
 
@@ -75,7 +68,7 @@ docs/                    Design notes and known gaps.
 
 ## Pipeline
 
-The pipeline has three explicit stages:
+The workflow has three explicit stages:
 
 1. **Parse**: convert a PDF, arXiv id, URL, or Markdown file into structured
    Markdown plus local figures.
@@ -84,16 +77,16 @@ The pipeline has three explicit stages:
 3. **Run**: execute one already-rendered task with an in-sandbox reproduction
    agent and score the submitted artifacts.
 
-The build stage is where most of the scientific filtering happens. It does not
-launch a sandbox or GPU job. It may call text and vision model APIs, depending on
+Most scientific filtering happens during build. This stage does not launch a
+sandbox or GPU job, but it may call text and vision model APIs depending on
 cache state and image parsing configuration.
 
 For command-line recipes, flags, compute-node notes, and operational gotchas,
-read `AGENTS.md`.
+use `AGENTS.md`.
 
 ## How RLVR Task Selection Works
 
-Task selection is claim-first:
+Task selection is claim-first and target-gated:
 
 1. Extract candidate claims from the whole paper text.
 2. Rank/triage claims by importance, quantifiability, reproducibility, and cost.
@@ -110,15 +103,14 @@ Task selection is claim-first:
    checks, leak scans, hash consistency, and synthetic reward selftests.
 
 Only accepted `rlvr` tasks are written to `task_manifest.json`. Rejected or
-partial claims are still preserved in `01-extract/claim_verification_report.json`
-with the reason they were routed to `exploration`.
+partial claims remain in `01-extract/claim_verification_report.json` with the
+reason they were routed to `exploration`.
 
 ## For Operators And Agents
 
-README.md is intentionally high level. Use `AGENTS.md` as the operational
-runbook. It contains the exact parse/build/run commands, expected artifact
-paths, compute-node probing instructions, authentication pitfalls, runtime
-budgeting rules, and cleanup procedures.
+`README.md` is intentionally high level. Use `AGENTS.md` as the operational
+runbook for exact parse/build/run commands, artifact paths, compute-node probes,
+authentication pitfalls, runtime budgeting rules, and cleanup procedures.
 
 ## Known Gaps
 

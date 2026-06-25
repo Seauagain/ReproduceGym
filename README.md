@@ -1,5 +1,7 @@
 # ReproduceGym
 
+![ReproduceGym header](docs/assets/reproducegym-header.png)
+
 ReproduceGym turns RL/ML papers into claim-level sandbox tasks with verifiable,
 metric-based rewards. An agent can read a paper, build reproduction tasks, run
 them in an isolated workspace, and receive a score from a hidden verifier.

@@ -40,23 +40,20 @@ construction, verifier rendering, secrets, and trajectory capture. Remote comput
 is only reached by the sandboxed reproduction agent when a task needs GPUs.
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Build["1. Paper-to-Task Builder"]
-        A[Paper source] --> B[Parse bundle]
-        B --> C[Claims + evidence]
-        C --> D[Verifier contracts]
-        D --> E[Rendered tasks]
+        direction LR
+        A[Paper source] --> B[Parse bundle] --> C[Claims + evidence] --> D[Verifier contracts] --> E[Rendered tasks]
     end
 
     subgraph Run["2. Sandbox Runner"]
-        F[Task manifest] --> G[Sandbox workspace]
-        G --> H[Remote compute if needed]
-        H --> I[Submitted outputs]
+        direction LR
+        F[Task manifest] --> G[Sandbox workspace] --> H[Remote compute] --> I[Submitted outputs]
     end
 
     subgraph Verify["3. Verifier & Records"]
-        J[Hidden verifier] --> K[Metric rewards]
-        K --> L[Trajectory + reports]
+        direction LR
+        J[Hidden verifier] --> K[Metric rewards] --> L[Trajectory + reports]
     end
 
     E --> F

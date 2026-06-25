@@ -15,6 +15,14 @@ secrets; GPU nodes are reached only by the in-sandbox agent over plain ssh.
 The pipeline is split into three explicit stages, each a thin entrypoint writing
 into `runs/<paper_id>/`.
 
+Agent quick path:
+
+```bash
+python parse_paper.py --url 2503.20783 --paper-id 2503-dr-grpo
+python build_claim_tasks.py --paper runs/2503-dr-grpo --paper-id 2026-06-25-dr-grpo --out runs --parse-images auto --non-strict-vl --max-claims 5
+python run.py --claim_id <claim_id> --spec-hash <spec_hash> --server <node-alias>
+```
+
 ### Stage 0 - parse: `parse_paper.py`
 
 Source (arXiv id/URL, PDF URL, local PDF, or local md) -> `00-parse/{paper.md,
@@ -39,6 +47,7 @@ hash-versioned tasks. No sandbox/GPU.
 
 ```bash
 python build_claim_tasks.py --paper runs/dr-grpo --out runs --parse-images auto
+python build_claim_tasks.py --paper runs/2503-dr-grpo --paper-id 2026-06-25-dr-grpo --out runs --parse-images auto --non-strict-vl --max-claims 5
 ```
 
 `--paper` accepts a parse bundle dir (`runs/<id>` or its `00-parse/`) or a raw
@@ -48,9 +57,38 @@ are configured; `always` fails if multimodal is unavailable; `never` is text-onl
 In `auto`, if a paper has image refs but none resolve locally, build warns (run
 parse first).
 
+Common build flags:
+
+- `--max-claims N`: render top N accepted RLVR claims; `0` means all.
+- `--claim-id ID`: build only one claim/source id; repeatable.
+- `--refresh-claims`: ignore cached extraction/refinement and call models again.
+- `--non-strict-vl`: skip malformed VL JSON instead of failing the build.
+- `--no-baseline-check`: skip writing the baseline reward checker.
+
 Outputs:
-`runs/<paper>/01-extract/{figures.index.json,figure_evidence.yaml,claims.json}`,
-`02-spec/<claim>.<hash>.yaml`, and `03-task/<claim>/<hash>/`.
+`runs/<paper>/01-extract/{paper_evidence_index.json,claim_candidates.json,triaged_claims.json,claim_evidence/,refined_claims.json,claim_verification_report.json,selected_claims_for_build.json}`,
+`02-spec/<claim>.<hash>.yaml`, `03-task/<claim>/<hash>/`,
+`build_validation.json`, `task_manifest.json`, `token_usage.summary.json`, and
+`CLAIMS.md`.
+
+Downstream code should consume `task_manifest.json`, not guess a hash directory.
+Quick manifest inspection:
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+
+manifest = json.loads(Path("runs/<paper_id>/task_manifest.json").read_text())
+for task in manifest["tasks"]:
+    print(task["claim_id"], task["spec_hash"], task["task_dir"])
+PY
+```
+
+RLVR gating rule: a claim is in the manifest only if every primary metric has an
+executable formula, a paper-grounded `target_value`, and a valid continuous
+reward curve. Ungrounded metrics may be retained as diagnostics but are not part
+of the accepted reward contract.
 
 ## Run entrypoint: `run.py`
 
@@ -136,5 +174,5 @@ config/metax_nodes.yaml  node inventory + injected verl/MACA notes (gitignored)
 reproducegym/          host control: cli, orchestrator, models, estimate, metax,
                        runlayout, pipeline/, sandbox/, compute/, schema/
 agent_trace/           API-level trajectory capture (proxy + builders + raw/SFT)
-runs/<paper>/          01-extract/ 02-spec/ 03-task/<claim>/<hash>/ 04-run/<claim>/<hash>/NNN/  (gitignored)
+runs/<paper>/          00-parse/ 01-extract/ 02-spec/ 03-task/<claim>/<hash>/ 04-run/<claim>/<hash>/NNN/  (gitignored)
 ```

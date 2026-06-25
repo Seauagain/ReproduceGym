@@ -35,9 +35,9 @@ This version makes the contract stricter:
 
 ## Architecture
 
-ReproduceGym has three large modules. The host owns paper parsing, task
-construction, verifier rendering, secrets, and trajectory capture. Remote compute
-is only reached by the sandboxed reproduction agent when a task needs GPUs.
+ReproduceGym is split into three modules: build tasks, run tasks, and score
+tasks. The host keeps secrets and verifiers; remote machines only run the
+reproduction workload.
 
 ```mermaid
 flowchart LR
@@ -48,11 +48,11 @@ flowchart LR
     A --> B --> C
 ```
 
-| Module | What it owns | Main files |
+| Module | Role | Main files |
 |---|---|---|
-| Paper-to-Task Builder | Parse the paper, extract claims, bind evidence, compile verifier contracts, and render tasks. | `parse_paper.py`, `build_claim_tasks.py`, `reproducegym/pipeline/` |
-| Sandbox Runner | Resolve one rendered task, launch the reproduction agent, and manage compute access. | `run.py`, `reproducegym/sandbox/`, `config/` |
-| Verifier & Records | Recompute metrics, score reward curves, and preserve trajectories/reports. | `reproducegym/verifier/`, `agent_trace/`, `runs/<paper_id>/` |
+| Paper-to-Task Builder | Paper in, task specs out. | `parse_paper.py`, `build_claim_tasks.py`, `reproducegym/pipeline/` |
+| Sandbox Runner | Task in, agent attempt out. | `run.py`, `reproducegym/sandbox/`, `config/` |
+| Verifier & Records | Outputs in, reward and traces out. | `reproducegym/verifier/`, `agent_trace/`, `runs/<paper_id>/` |
 
 Generated `runs/<paper_id>/` directories are intentionally self-describing:
 

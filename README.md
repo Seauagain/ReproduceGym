@@ -35,23 +35,41 @@ This version makes the contract stricter:
 
 ## Architecture
 
-ReproduceGym separates the host control plane from remote compute. The host owns
-parsing, task construction, secrets, verifier rendering, and trajectory capture.
-Compute nodes are reached only by the in-sandbox reproduction agent when a task
-needs GPUs.
+ReproduceGym has three large modules. The host owns paper parsing, task
+construction, verifier rendering, secrets, and trajectory capture. Remote compute
+is only reached by the sandboxed reproduction agent when a task needs GPUs.
 
 ```mermaid
 flowchart LR
-    A[Paper PDF / arXiv / Markdown] --> B[Parse bundle]
-    B --> C[Claim extraction and evidence binding]
-    C --> D[Verifier contract synthesis]
-    D --> E[Rendered sandbox tasks]
-    E --> F[Reproduction agent on compute node]
-    F --> G[Metrics and artifacts]
-    G --> H[Hidden verifier reward]
+    subgraph Build["1. Paper-to-Task Builder"]
+        A[Paper source] --> B[Parse bundle]
+        B --> C[Claims + evidence]
+        C --> D[Verifier contracts]
+        D --> E[Rendered tasks]
+    end
+
+    subgraph Run["2. Sandbox Runner"]
+        F[Task manifest] --> G[Sandbox workspace]
+        G --> H[Remote compute if needed]
+        H --> I[Submitted outputs]
+    end
+
+    subgraph Verify["3. Verifier & Records"]
+        J[Hidden verifier] --> K[Metric rewards]
+        K --> L[Trajectory + reports]
+    end
+
+    E --> F
+    I --> J
 ```
 
-The generated run directory is intentionally self-describing:
+| Module | What it owns | Main files |
+|---|---|---|
+| Paper-to-Task Builder | Parse the paper, extract claims, bind evidence, compile verifier contracts, and render tasks. | `parse_paper.py`, `build_claim_tasks.py`, `reproducegym/pipeline/` |
+| Sandbox Runner | Resolve one rendered task, launch the reproduction agent, and manage compute access. | `run.py`, `reproducegym/sandbox/`, `config/` |
+| Verifier & Records | Recompute metrics, score reward curves, and preserve trajectories/reports. | `reproducegym/verifier/`, `agent_trace/`, `runs/<paper_id>/` |
+
+Generated `runs/<paper_id>/` directories are intentionally self-describing:
 
 | Stage | Purpose | Main artifacts |
 |---|---|---|
@@ -65,7 +83,7 @@ Downstream systems should read `task_manifest.json`, which maps each accepted
 claim to its exact task directory and `spec_hash`. Do not guess from hash
 directories under `03-task/`.
 
-Important directories:
+Code map:
 
 ```text
 prompts/                 LLM/VL prompts for extraction and refinement.

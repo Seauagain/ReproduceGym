@@ -39,14 +39,7 @@ ReproduceGym is split into three modules: build tasks, run tasks, and score
 tasks. The host keeps secrets and verifiers; remote machines only run the
 reproduction workload.
 
-```mermaid
-flowchart LR
-    A["Paper-to-Task Builder<br/>parse · claims · targets · tasks"]
-    B["Sandbox Runner<br/>workspace · agent · compute"]
-    C["Verifier & Records<br/>metrics · reward · trajectory"]
-
-    A --> B --> C
-```
+![ReproduceGym architecture](docs/assets/reproducegym-architecture.png)
 
 | Module | Role | Main files |
 |---|---|---|
